@@ -354,13 +354,15 @@ def indent(level: int, lines: str | Iterator[str] | Sequence[str]) -> str:
 
 def make_fstring(elements: list[Expression]) -> str:
     result = []
+    needs_f = False
     for element in elements:
         if isinstance(element, Literal) and isinstance(element.value, (String, Char)):
             result.append(element.value.value)
         else:
+            needs_f = True
             result.append(f"{{{compile_expr(element)}}}")
 
-    return f"f{' '.join(result)!r}"
+    return ("f" if needs_f else "") + repr(" ".join(result))
 
 
 def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
