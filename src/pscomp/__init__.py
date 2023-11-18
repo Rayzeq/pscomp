@@ -1,17 +1,12 @@
-#!/usr/bin/env nix-shell
-#!nix-shell -i python3 -p python3
-
 from __future__ import annotations
 
 import argparse
 
-import lexer
-import parser_ as parser
-import typer
-from compiler import compile
-from logger import Error
-from parser_ import ParserError
-from source import FileSection, SourceFile, UnsupportedFileTypeError
+from . import lexer, parser, typer
+from .compiler import compile
+from .logger import Error
+from .parser import ParserError
+from .source import FileSection, SourceFile, UnsupportedFileTypeError
 
 
 def compile_section(section: FileSection) -> str:
@@ -46,7 +41,3 @@ def main() -> None:
                 Error("Some errors were unrecoverable, no file was written").log()
             else:
                 print(f"Done, the result was written to {section.out_path}")
-
-
-if __name__ == "__main__":
-    main()

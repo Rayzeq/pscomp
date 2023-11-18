@@ -3,11 +3,11 @@ from __future__ import annotations
 from functools import reduce
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-import parser_ as parser
-from lexer import OperatorType
-from logger import Error, Warn
-from parser_ import Node, Value
-from source import Span, Spanned, SpannedStr
+from . import parser
+from .lexer import OperatorType
+from .logger import Error, Warn
+from .parser import Node, Value
+from .source import Span, Spanned, SpannedStr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -98,7 +98,7 @@ class BuiltinSignature(Signature):
         return self.source.rsplit(".", 1)[-1]
 
 
-from builtin_syms import Unknown, builtins  # noqa: E402 - prevent circular import
+from .builtin_syms import Unknown, builtins  # noqa: E402 - prevent circular import
 
 
 class Context:

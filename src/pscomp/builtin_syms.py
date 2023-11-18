@@ -1,9 +1,9 @@
 from typing import cast
 
-import lexer
-from parser_ import Float, Integer, Value
-from source import SourceFile, Spanned
-from typer import Argument, BuiltinSignature
+from . import lexer
+from .parser import Float, Integer, Value
+from .source import SourceFile, Spanned
+from .typer import Argument, BuiltinSignature
 
 BuiltinSource = SourceFile(
     """

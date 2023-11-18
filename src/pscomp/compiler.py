@@ -3,10 +3,9 @@ from __future__ import annotations
 from itertools import tee, zip_longest
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-import parser_ as parser
-import typer
-from parser_ import Bool, Char, Float, Integer, List, String, Value, Void
-from typer import (
+from . import parser, typer
+from .parser import Bool, Char, Float, Integer, List, String, Value, Void
+from .typer import (
     Add,
     And,
     Argument,
@@ -192,15 +191,9 @@ def compile_statement(statement: Statement) -> str:
         start = compile_expr(statement.start)
         end = compile_expr(statement.end)
         step = (", " + compile_expr(statement.step)) if statement.step else ""
-        return f"""
-for {binding} in range({start}, ({end}) + 1{step}):
-    {indent(4, compile_block(statement.body))}
-""".strip()
+        return f"for {binding} in range({start}, ({end}) + 1{step}):\n    {indent(4, compile_block(statement.body))}"
     elif isinstance(statement, WhileLoop):
-        return f"""
-while {compile_expr(statement.condition)}:
-    {indent(4, compile_block(statement.body))}
-""".strip()
+        return f"while {compile_expr(statement.condition)}:\n    {indent(4, compile_block(statement.body))}"
     elif isinstance(statement, DoWhileLoop):
         return f"""
 while True:

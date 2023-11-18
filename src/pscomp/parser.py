@@ -4,10 +4,10 @@ from abc import ABC, ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Sequence, TypeAlias, TypeVar, cast, overload
 
-import lexer
-from lexer import KEYWORDS, Token
-from logger import Error, Warn
-from source import Position, Span, Spanned, SpannedStr
+from . import lexer
+from .lexer import KEYWORDS, Token
+from .logger import Error, Warn
+from .source import Position, Span, Spanned, SpannedStr
 
 if TYPE_CHECKING:
     from typing_extensions import Never, Self

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, SupportsIndex
 
-from source import Position, SourceFile, Span
+from .source import Position, SourceFile, Span
 
 if TYPE_CHECKING:
     from typing_extensions import Self
