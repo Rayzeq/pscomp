@@ -307,7 +307,7 @@ def {program.name}() -> None:
     {indent(4, compile_block(program.body))}
 
 
-if __name__ == "__name__":
+if __name__ == "__main__":
     {program.name}()
 """.strip()
 
