@@ -98,7 +98,7 @@ class BuiltinSignature(Signature):
         return self.source.rsplit(".", 1)[-1]
 
 
-from builtin_syms import Unknown, builtins
+from builtin_syms import Unknown, builtins  # noqa: E402 - prevent circular import
 
 
 class Context:

@@ -171,29 +171,22 @@ def compile_statement(statement: Statement) -> str:
     elif isinstance(statement, ExpressionStmt):
         return f"{compile_expr(statement.expr)}"
     elif isinstance(statement, Print):
-        return f"print({', '.join(map(compile_expr, statement.elements))})"
+        return f"print({make_fstring(statement.elements)})"
     elif isinstance(statement, Input):
         return "\n".join(compile_input(b) for b in statement.bindings)
     elif isinstance(statement, Condition):
-        base = f"""
-if {compile_expr(statement.condition)}:
-    {indent(4, compile_block(statement.if_block))}
-""".strip()
+        base = f"if {compile_expr(statement.condition)}:\n    {indent(4, compile_block(statement.if_block))}"
         if statement.else_block:
-            base += f"""
-else:
-    {indent(4, compile_block(statement.else_block))}
-"""
-        return base.strip()
+            base += f"\nelse:\n    {indent(4, compile_block(statement.else_block))}"
+        return base
     elif isinstance(statement, Switch):
         cases = "\n".join(
-            f"case {compile_expr(case[0])}:\n    {indent(4, compile_block(case[1]))}".strip()
-            for case in statement.cases
+            f"case {compile_expr(case[0])}:\n    {indent(4, compile_block(case[1]))}" for case in statement.cases
         )
         if statement.default:
-            cases += "\n" + f"case _:\n    {indent(4, compile_block(statement.default))}".strip()
+            cases += "\n" + f"case _:\n    {indent(4, compile_block(statement.default))}"
 
-        return f"match {compile_expr(statement.binding)}:\n    {indent(4, cases)}".strip()
+        return f"match {compile_expr(statement.binding)}:\n    {indent(4, cases)}"
     elif isinstance(statement, ForLoop):
         binding = compile_binding(statement.binding)
         start = compile_expr(statement.start)
@@ -239,8 +232,7 @@ def compile_block(statments: list[Statement], ret_values: Sequence[str] | None =
 
             bd = compile_binding(next_stmt.bindings[0])
             cast = CASTMAP.get(next_stmt.bindings[0].typ)
-            # TODO: cast to str everything OR use f-strings
-            msg = " + ".join(map(compile_expr, statement.elements))
+            msg = make_fstring(statement.elements)
             if cast is None:
                 result.append(f"{bd} = input({msg})")
             else:
@@ -358,6 +350,17 @@ def indent(level: int, lines: str | Iterator[str] | Sequence[str]) -> str:
         return joint.join(lines.split("\n"))
     else:
         return joint.join(indent(level, x) for x in lines)
+
+
+def make_fstring(elements: list[Expression]) -> str:
+    result = []
+    for element in elements:
+        if isinstance(element, Literal) and isinstance(element.value, (String, Char)):
+            result.append(element.value.value)
+        else:
+            result.append(f"{{{compile_expr(element)}}}")
+
+    return f"f{' '.join(result)!r}"
 
 
 def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
