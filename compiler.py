@@ -357,7 +357,7 @@ def make_fstring(elements: list[Expression]) -> str:
     needs_f = False
     for element in elements:
         if isinstance(element, Literal) and isinstance(element.value, (String, Char)):
-            result.append(element.value.value)
+            result.append(element.value.value.replace("{", "{{").replace("}", "}}"))
         else:
             needs_f = True
             result.append(f"{{{compile_expr(element)}}}")

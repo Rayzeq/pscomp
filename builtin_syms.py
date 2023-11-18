@@ -48,7 +48,7 @@ builtins = {
             Argument(_tokens[22].name, _tokens[24].span.wrap(Float)),
         ],
         _tokens[27].span.wrap(Float),
-        source="mat.sqrt",
+        source="math.sqrt",
     ),
     "random": BuiltinSignature(
         _tokens[29].name,
