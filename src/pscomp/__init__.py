@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
+import sys
 
 from . import lexer, parser, typer
 from .compiler import compile
@@ -24,6 +26,7 @@ def main() -> None:
         type=argparse.FileType("r"),
         help="The files you want to compile. Supported files are .md, .pseudo, .txt or stdin (using `-`)",
     )
+    parser.add_argument("-r", "--run", action="store_true", help="Automatically run the compiled code")
     args = parser.parse_args()
 
     for file in args.file:
@@ -41,3 +44,7 @@ def main() -> None:
                 Error("Some errors were unrecoverable, no file was written").log()
             else:
                 print(f"Done, the result was written to {section.out_path}")
+
+                if args.run:
+                    print(f"Running {section.out_path}...")
+                    subprocess.run([sys.executable, str(section.out_path)], check=False)  # noqa: S603 - false positive
