@@ -362,6 +362,9 @@ def make_fstring(elements: list[Expression]) -> str:
             needs_f = True
             result.append(f"{{{compile_expr(element)}}}")
 
+    if len(result) == 1 and needs_f:
+        return f"str({compile_expr(elements[0])})"
+
     return ("f" if needs_f else "") + repr(" ".join(result))
 
 
