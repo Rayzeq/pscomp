@@ -6,6 +6,12 @@ Vous aurez besoins de Python 3.10 (minimum) et pip ou pipx.
 Installez le compilateur avec `pipx install git+https://github.com/Rayzeq/pscomp.git` (remplacez `pipx` par `pip` ou `pip3` si nécéssaire).
 
 
+## Mise à jour
+
+Avec `pipx`: `pipx install --force git+https://github.com/Rayzeq/pscomp.git`
+Avec `pip` ou `pip3`: `pip install --force-reinstall git+https://github.com/Rayzeq/pscomp.git`
+
+
 ## Utilisation
 
 Pour compiler un fichier, utilisez `pscomp <fichier>`.
