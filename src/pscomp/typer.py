@@ -128,6 +128,7 @@ class Context:
                 msg=f"this of type {value.typ.name}",
             ).comment(typ.span, "the variable's type is set here").log()
         self.constants[name] = (typ, value)
+        self.add_variable(name, typ, value)
 
     def lookup_constant(self: Self, name: str) -> tuple[Spanned[type[Value[Any]]], Expression | None]:
         if name in self.constants:
