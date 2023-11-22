@@ -8,7 +8,7 @@ Installez le compilateur avec `pipx install git+https://github.com/Rayzeq/pscomp
 
 ## Mise à jour
 
-Avec `pipx`: `pipx install --force git+https://github.com/Rayzeq/pscomp.git`
+Avec `pipx`: `pipx install --force git+https://github.com/Rayzeq/pscomp.git`\
 Avec `pip` ou `pip3`: `pip install --force-reinstall git+https://github.com/Rayzeq/pscomp.git`
 
 
