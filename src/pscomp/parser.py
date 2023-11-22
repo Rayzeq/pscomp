@@ -833,7 +833,7 @@ class Operator(NoParse):
 class TypeDef:
     name: SpannedStr
     typ: Spanned[type[Value[Any]]]
-    default: Value[Any] | None
+    default: Expr | None
 
 
 class Block:
@@ -961,7 +961,7 @@ class Block:
             value = None
             if isinstance(stream.try_peek(), lexer.Assign):
                 stream.pop()
-                value = Value.parse(stream)
+                value = Expr.parse(stream)
 
             for binding in bindings:
                 typ = List.from_(binding, typ_)

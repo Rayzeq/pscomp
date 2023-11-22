@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import reduce
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
@@ -104,7 +105,7 @@ from .builtins import Unknown, builtins  # noqa: E402 - prevent circular import
 class Context:
     python_imports: dict[str, set[str]]
     functions: dict[str, Signature]
-    variables: dict[SpannedStr, tuple[Spanned[type[Value[Any]]], Value[Any] | None]]
+    variables: dict[SpannedStr, tuple[Spanned[type[Value[Any]]], Expression | None]]
     ret_type: Spanned[type[Value[Any]]] | None
 
     def __init__(self: Self) -> None:
@@ -135,20 +136,20 @@ class Context:
 
         return None
 
-    def add_variable(self: Self, name: SpannedStr, typ: Spanned[type[Value[Any]]], value: Value[Any] | None) -> None:
+    def add_variable(self: Self, name: SpannedStr, typ: Spanned[type[Value[Any]]], value: Expression | None) -> None:
         if name in self.variables:
             Warn(f"A variable named {name} is already defined, latest definition will be used").at(
                 name.span,
             ).comment(next(n for n in self.variables if n == name).span, "previous definition here").log()
 
-        if value is not None and not isinstance(value, typ.value):
-            Error(f"`{name}` has type {typ.value.name} but value has type {type(value).name}").at(
+        if value is not None and not issubclass(value.typ, typ.value):
+            Error(f"`{name}` has type {typ.value.name} but value has type {value.typ.name}").at(
                 value.span,
-                msg=f"this of type {type(value).name}",
+                msg=f"this of type {value.typ.name}",
             ).comment(typ.span, "the variable's type is set here").log()
         self.variables[name] = (typ, value)
 
-    def lookup_variable(self: Self, name: str) -> tuple[Spanned[type[Value[Any]]], Value[Any] | None]:
+    def lookup_variable(self: Self, name: str) -> tuple[Spanned[type[Value[Any]]], Expression | None]:
         if name in self.variables:
             return self.variables[cast(SpannedStr, name)]
 
@@ -163,20 +164,40 @@ class Context:
         return new
 
 
+@dataclass
+class TypeDef:
+    name: SpannedStr
+    typ: Spanned[type[Value[Any]]]
+    default: Expression | None
+
+    @classmethod
+    def from_(cls: type[Self], typedef: parser.TypeDef, context: Context) -> Self:
+        default = Expression.from_(typedef.default, context, basic=True) if typedef.default else None
+        return cls(typedef.name, typedef.typ, default)
+
+
 class Program:
     @classmethod
     def parse(cls: type[Self], program: parser.Program, context: Context) -> Self:
         context = context.fork()
         for typedef in program.types:
-            context.add_variable(typedef.name, typedef.typ, typedef.default)
+            context.add_variable(
+                typedef.name,
+                typedef.typ,
+                Expression.from_(typedef.default, context) if typedef.default else None,
+            )
 
-        return cls(program.name, program.types, parse_block(program.body, context))
+        return cls(
+            program.name,
+            [TypeDef.from_(typedef, context) for typedef in program.types],
+            parse_block(program.body, context),
+        )
 
     name: str
-    types: list[parser.TypeDef]
+    types: list[TypeDef]
     body: list[Statement]
 
-    def __init__(self: Self, name: str, types: list[parser.TypeDef], body: list[Statement]) -> None:
+    def __init__(self: Self, name: str, types: list[TypeDef], body: list[Statement]) -> None:
         self.name = name
         self.types = types
         self.body = body
@@ -205,18 +226,26 @@ class UnparsedFunction:
         for arg in self.signature.args:
             context.add_variable(arg.name, arg.typ, None)
         for typedef in self.types:
-            context.add_variable(typedef.name, typedef.typ, typedef.default)
+            context.add_variable(
+                typedef.name,
+                typedef.typ,
+                Expression.from_(typedef.default, context) if typedef.default else None,
+            )
         context.ret_type = self.signature.ret
 
-        return Function(self.signature, self.types, parse_block(self.body, context))
+        return Function(
+            self.signature,
+            [TypeDef.from_(typedef, context) for typedef in self.types],
+            parse_block(self.body, context),
+        )
 
 
 class Function:
     signature: Signature
-    types: list[parser.TypeDef]
+    types: list[TypeDef]
     body: list[Statement]
 
-    def __init__(self: Self, signature: Signature, types: list[parser.TypeDef], body: list[Statement]) -> None:
+    def __init__(self: Self, signature: Signature, types: list[TypeDef], body: list[Statement]) -> None:
         self.signature = signature
         self.types = types
         self.body = body
@@ -242,13 +271,24 @@ class Expression:
     }
 
     @classmethod
-    def from_(cls: type[Self], node: parser.Expr.SubTypes | Expression, context: Context) -> Expression:
+    def from_(
+        cls: type[Self],
+        node: parser.Expr.SubTypes | Expression,
+        context: Context,
+        *,
+        basic: bool = False,
+    ) -> Expression:
+        if basic and isinstance(node, (parser.Binding, parser.FuncCall)):
+            Error("Expression is not allowed in this context").hint(
+                "Only literals and other constants are allowed, in constants, array indexes, and default values",
+            ).at(node.span).log()
+
         if isinstance(node, Expression):
             return node
         elif isinstance(node, Value):
             return Literal(node)
         elif isinstance(node, parser.Expr):
-            return Expression.parse(node, context)
+            return Expression.parse(node, context, basic=basic)
         elif isinstance(node, parser.Binding):
             return Binding.parse(node, context)
         elif isinstance(node, parser.FuncCall):
@@ -258,7 +298,7 @@ class Expression:
             raise TypeError(msg)
 
     @classmethod
-    def parse(cls: type[Self], expr: parser.Expr, context: Context) -> Expression:
+    def parse(cls: type[Self], expr: parser.Expr, context: Context, *, basic: bool = False) -> Expression:
         # can't put this in the class body because subclasses aren't defined yet
         BINOPS = {
             OperatorType.POW: Power,
@@ -297,14 +337,14 @@ class Expression:
                 operator.op in (OperatorType.ADD, OperatorType.SUB)
                 and (op_index == 0 or isinstance(nodes[op_index - 1], parser.Operator))
             ) or operator.op == OperatorType.NOT:
-                cls.parse_unary(op_index, nodes, context)
+                cls.parse_unary(op_index, nodes, context, basic=basic)
             else:
                 # if there is an unary operator at the right of this operator, this will take care of it
-                cls.parse_unary(op_index + 1, nodes, context)
+                cls.parse_unary(op_index + 1, nodes, context, basic=basic)
                 new_expr = BINOPS[operator.op](
-                    Expression.from_(nodes[op_index - 1], context),
+                    Expression.from_(nodes[op_index - 1], context, basic=basic),
                     operator,
-                    Expression.from_(nodes[op_index + 1], context),
+                    Expression.from_(nodes[op_index + 1], context, basic=basic),
                 )
                 nodes[op_index - 1] = new_expr
                 nodes.pop(op_index + 1)
@@ -317,7 +357,7 @@ class Expression:
         if isinstance(nodes[0], Expression):
             return nodes[0]
         else:
-            return Expression.from_(nodes[0], context)
+            return Expression.from_(nodes[0], context, basic=basic)
 
     @classmethod
     def parse_unary(
@@ -325,21 +365,23 @@ class Expression:
         index: int,
         nodes: list[parser.Expr.SubTypes | Expression],
         context: Context,
+        *,
+        basic: bool,
     ) -> None:
         operator = nodes[index]
         if not isinstance(operator, parser.Operator):
             return
 
         # if there is another unary operator after this one, this should parse it
-        cls.parse_unary(index + 1, nodes, context)
+        cls.parse_unary(index + 1, nodes, context, basic=basic)
         if operator.op in (OperatorType.ADD, OperatorType.SUB):
             new_expr: Expression = (
-                Positive(operator, Expression.from_(nodes[index + 1], context))
+                Positive(operator, Expression.from_(nodes[index + 1], context, basic=basic))
                 if operator.op == OperatorType.ADD
-                else Negative(operator, Expression.from_(nodes[index + 1], context))
+                else Negative(operator, Expression.from_(nodes[index + 1], context, basic=basic))
             )
         elif operator.op == OperatorType.NOT:
-            new_expr = Not(operator, Expression.from_(nodes[index + 1], context))
+            new_expr = Not(operator, Expression.from_(nodes[index + 1], context, basic=basic))
         else:
             msg = f"[COMPILER BUG] Invalid unary operator: {operator}"
             raise TypeError(msg)
