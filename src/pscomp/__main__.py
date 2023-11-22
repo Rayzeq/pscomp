@@ -10,8 +10,6 @@ from .logger import Error
 from .parser import ParserError
 from .source import FileSection, SourceFile, UnsupportedFileTypeError
 
-print("import", __name__)
-
 
 def compile_section(section: FileSection) -> str:
     tokens = lexer.lexer(section)
