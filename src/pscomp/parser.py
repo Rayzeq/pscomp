@@ -168,10 +168,10 @@ SV = TypeVar("SV", bound=Value[Any])
 
 class ListMeta(ABCMeta, Generic[SV]):
     name: str
-    length: int | None
+    length: Expr
     subtype: type[SV]
 
-    def __getitem__(cls: ListMeta[SV], subtype_and_size: tuple[type[Value[Any]], int]) -> type[List[Any]]:
+    def __getitem__(cls: ListMeta[SV], subtype_and_size: tuple[type[Value[Any]], Expr]) -> type[List[Any]]:
         subtype, size = subtype_and_size
 
         if hasattr(cls, "subtype"):
@@ -192,25 +192,20 @@ class ListMeta(ABCMeta, Generic[SV]):
         return (cls.length, cls.subtype) == (other.length, other.subtype)
 
     def __hash__(cls: ListMeta[SV]) -> int:
-        return hash((cls.length, cls.subtype))
+        # this is needed by issubclass
+        # TODO: make a constexpr calculator to be able to do typechecking with list length
+        return hash(cls.subtype)
 
 
 class List(Value[list[SV]], Generic[SV], metaclass=ListMeta):
-    name: str = "tableau"
-    length: int | None
-    subtype: type[SV]
+    name = "tableau"
 
     @classmethod
     def from_(cls: type[Self], binding: Binding, typ_: type[SV]) -> type[List[Any] | SV]:
         if isinstance(binding, Variable):
             return typ_
         elif isinstance(binding, Indexing):
-            index = binding.index
-            if len(index.nodes) == 1 and isinstance(index.nodes[0], Value) and isinstance(index.nodes[0].value, int):
-                return cls[cls.from_(binding.sub, typ_), index.nodes[0].value]
-            else:
-                Error("Array length must be a single int").at(index.span).log()
-                return cls[Value, 0]
+            return cls[cls.from_(binding.sub, typ_), binding.index]
         else:
             msg = "[COMPILER BUG] Unreachable"
             raise TypeError(msg)

@@ -264,7 +264,7 @@ def compile_argdef(arg: Argument) -> str:
 def compile_typedef(typedef: TypeDef) -> str:
     def list_init(typ: type[Value[Any]]) -> str:
         if issubclass(typ, parser.List):
-            return f"[{list_init(typ.subtype)} for _ in range({typ.length})]"
+            return f"[{list_init(typ.subtype)} for _ in range({compile_expr(typ.length)})]"  # type: ignore[arg-type] # go check TypeDef._check_indexes
         else:
             return "Uninit"
 

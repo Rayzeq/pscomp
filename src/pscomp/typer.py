@@ -178,8 +178,11 @@ class Context:
 
     def fork(self: Self) -> Self:
         new = type(self)()
-        # imports are global
+
+        # global values
         new.python_imports = self.python_imports
+        new.constants = self.constants
+
         new.functions = self.functions.copy()
         new.variables = self.variables.copy()
         return new
@@ -194,7 +197,16 @@ class TypeDef:
     @classmethod
     def from_(cls: type[Self], typedef: parser.TypeDef, context: Context) -> Self:
         default = Expression.from_(typedef.default, context, constexpr=True) if typedef.default else None
+        cls._check_indexes(typedef.typ.value, context)
         return cls(typedef.name, typedef.typ, default)
+
+    @classmethod
+    def _check_indexes(cls: type[Self], typ: type[Value[Any]], context: Context) -> None:
+        if isinstance(typ, parser.ListMeta):
+            length = Expression.parse(typ.length, context, constexpr=True)  # type: ignore[attr-defined] # mypy don't understand that type[List] == ListMeta
+            # for the compiler
+            typ.length = length  # type: ignore[attr-defined]
+            cls._check_indexes(typ.subtype, context)  # type: ignore[attr-defined]
 
 
 class Program:
@@ -606,7 +618,7 @@ class Variable(Binding):
             if typ == Value:
                 e = Error(f"Cannot find declaration for constant {name}").at(name.span)
                 if context.lookup_variable(name)[0].value != Value:
-                    e.hint("found a variable with this name, but variables can't be used to compute constants values")
+                    e.hint("a variable with this name exist, but only constants are allowed in this context")
                 e.log()
         else:
             typ = context.lookup_variable(name)[0].value
