@@ -42,6 +42,7 @@ from .typer import (
     Statement,
     Substract,
     Switch,
+    TypeDef,
     Variable,
     WhileLoop,
 )
@@ -260,7 +261,7 @@ def compile_argdef(arg: Argument) -> str:
     return f"{arg.name}: {compile_type(arg.typ.value)}"
 
 
-def compile_typedef(typedef: parser.TypeDef) -> str:
+def compile_typedef(typedef: TypeDef) -> str:
     def list_init(typ: type[Value[Any]]) -> str:
         if issubclass(typ, parser.List):
             return f"[{list_init(typ.subtype)} for _ in range({typ.length})]"
@@ -269,7 +270,7 @@ def compile_typedef(typedef: parser.TypeDef) -> str:
 
     result = f"{typedef.name}: {compile_type(typedef.typ.value)}"
     if typedef.default is not None:
-        result += f" = {compile_value(typedef.default)}"
+        result += f" = {compile_expr(typedef.default)}"
     elif issubclass(typedef.typ.value, parser.List):
         result += f" = {list_init(typedef.typ.value)}"
     else:
@@ -277,7 +278,7 @@ def compile_typedef(typedef: parser.TypeDef) -> str:
     return result
 
 
-def compile_typedefs(typedefs: list[parser.TypeDef]) -> list[str]:
+def compile_typedefs(typedefs: list[TypeDef]) -> list[str]:
     return list(map(compile_typedef, typedefs))
 
 
