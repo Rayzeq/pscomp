@@ -366,14 +366,17 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
     linesep = "\n"
     joint = "\n\n\n"
 
-    imports = linesep.join(
+    constants = "\n".join(
+        f"{name}: {compile_type(typ.value)} = {compile_expr(value)}" for name, (typ, value) in context.constants.items()
+    )
+
+    imports = "\n".join(
         f"from {module} import {', '.join(attributes)}" for module, attributes in context.python_imports.items()
     )
 
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
-{linesep + imports + linesep if imports else ''}
-
+{linesep + (linesep * 2).join(filter(bool, (imports, constants))) + linesep}
 # ================ Compiler generated code, please don't edit ================
 class UninitMeta(type):
     def __instancecheck__(cls: UninitMeta, instance: object) -> bool:
