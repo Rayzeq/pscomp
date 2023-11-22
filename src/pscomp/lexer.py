@@ -472,8 +472,20 @@ class RBracket(SingleCharToken):
     value = "]"
 
 
+class LBrace(SingleCharToken):
+    value = "{"
+
+
+class RBrace(SingleCharToken):
+    value = "}"
+
+
 class Assign(SingleCharToken):
     value = "<-"
+
+
+class Dot(SingleCharToken):
+    value = "."
 
 
 def _lexer(reader: StringReader) -> list[Token[Any]]:
