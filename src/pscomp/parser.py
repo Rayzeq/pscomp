@@ -1086,11 +1086,27 @@ def check_token(token: Token[Any] | None, expected: Sequence[T | type[T]]) -> bo
     return False
 
 
-def parse(tokens: list[Token[Any]]) -> list[Node[Any]]:
+def _parse(stream: TokenStream) -> tuple[list[Node[Any]], list[TypeDef]]:
+    typdefs = Block._parse_typedefs(stream)
+    for constant in typdefs:
+        if not constant.name.isupper():
+            Warn("Constant should be UPPER_CASE").at(constant.name.span).replacement(
+                (constant.name.span, constant.name.upper()),
+                msg="Make the constant uppercase",
+            ).log()
+
+        if constant.default is None:
+            Error("Constants must have a value").at(constant.name.span).log()
+            continue
+
+    return Block.parse(stream), typdefs
+
+
+def parse(tokens: list[Token[Any]]) -> tuple[list[Node[Any]], list[TypeDef]]:
     stream = TokenStream(tokens)
 
     try:
-        return Block.parse(stream)
+        return _parse(stream)
     except ParserError:
         raise
     except Exception:

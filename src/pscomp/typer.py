@@ -104,15 +104,36 @@ from .builtins import Unknown, builtins  # noqa: E402 - prevent circular import
 
 class Context:
     python_imports: dict[str, set[str]]
+    constants: dict[SpannedStr, tuple[Spanned[type[Value[Any]]], Expression]]
     functions: dict[str, Signature]
     variables: dict[SpannedStr, tuple[Spanned[type[Value[Any]]], Expression | None]]
     ret_type: Spanned[type[Value[Any]]] | None
 
     def __init__(self: Self) -> None:
         self.python_imports = {}
+        self.constants = {}
         self.functions = {}
         self.variables = {}
         self.ret_type = None
+
+    def add_constant(self: Self, name: SpannedStr, typ: Spanned[type[Value[Any]]], value: Expression) -> None:
+        if name in self.constants:
+            Warn(f"A constant named {name} is already defined, latest definition will be used").at(
+                name.span,
+            ).comment(next(n for n in self.constants if n == name).span, "previous definition here").log()
+
+        if value is not None and not issubclass(value.typ, typ.value):
+            Error(f"`{name}` has type {typ.value.name} but value has type {value.typ.name}").at(
+                value.span,
+                msg=f"this of type {value.typ.name}",
+            ).comment(typ.span, "the variable's type is set here").log()
+        self.constants[name] = (typ, value)
+
+    def lookup_constant(self: Self, name: str) -> tuple[Spanned[type[Value[Any]]], Expression | None]:
+        if name in self.constants:
+            return self.constants[cast(SpannedStr, name)]
+
+        return (Unknown, None)
 
     def add_function(self: Self, sig: Signature) -> None:
         if sig.name in self.functions:
@@ -172,7 +193,7 @@ class TypeDef:
 
     @classmethod
     def from_(cls: type[Self], typedef: parser.TypeDef, context: Context) -> Self:
-        default = Expression.from_(typedef.default, context, basic=True) if typedef.default else None
+        default = Expression.from_(typedef.default, context, constexpr=True) if typedef.default else None
         return cls(typedef.name, typedef.typ, default)
 
 
@@ -276,9 +297,9 @@ class Expression:
         node: parser.Expr.SubTypes | Expression,
         context: Context,
         *,
-        basic: bool = False,
+        constexpr: bool = False,
     ) -> Expression:
-        if basic and isinstance(node, (parser.Binding, parser.FuncCall)):
+        if constexpr and isinstance(node, parser.FuncCall):
             Error("Expression is not allowed in this context").hint(
                 "Only literals and other constants are allowed, in constants, array indexes, and default values",
             ).at(node.span).log()
@@ -288,9 +309,9 @@ class Expression:
         elif isinstance(node, Value):
             return Literal(node)
         elif isinstance(node, parser.Expr):
-            return Expression.parse(node, context, basic=basic)
+            return Expression.parse(node, context, constexpr=constexpr)
         elif isinstance(node, parser.Binding):
-            return Binding.parse(node, context)
+            return Binding.parse(node, context, constexpr=constexpr)
         elif isinstance(node, parser.FuncCall):
             return FuncCall.parse(node, context)
         else:
@@ -298,7 +319,7 @@ class Expression:
             raise TypeError(msg)
 
     @classmethod
-    def parse(cls: type[Self], expr: parser.Expr, context: Context, *, basic: bool = False) -> Expression:
+    def parse(cls: type[Self], expr: parser.Expr, context: Context, *, constexpr: bool = False) -> Expression:
         # can't put this in the class body because subclasses aren't defined yet
         BINOPS = {
             OperatorType.POW: Power,
@@ -337,14 +358,14 @@ class Expression:
                 operator.op in (OperatorType.ADD, OperatorType.SUB)
                 and (op_index == 0 or isinstance(nodes[op_index - 1], parser.Operator))
             ) or operator.op == OperatorType.NOT:
-                cls.parse_unary(op_index, nodes, context, basic=basic)
+                cls.parse_unary(op_index, nodes, context, constexpr=constexpr)
             else:
                 # if there is an unary operator at the right of this operator, this will take care of it
-                cls.parse_unary(op_index + 1, nodes, context, basic=basic)
+                cls.parse_unary(op_index + 1, nodes, context, constexpr=constexpr)
                 new_expr = BINOPS[operator.op](
-                    Expression.from_(nodes[op_index - 1], context, basic=basic),
+                    Expression.from_(nodes[op_index - 1], context, constexpr=constexpr),
                     operator,
-                    Expression.from_(nodes[op_index + 1], context, basic=basic),
+                    Expression.from_(nodes[op_index + 1], context, constexpr=constexpr),
                 )
                 nodes[op_index - 1] = new_expr
                 nodes.pop(op_index + 1)
@@ -357,7 +378,7 @@ class Expression:
         if isinstance(nodes[0], Expression):
             return nodes[0]
         else:
-            return Expression.from_(nodes[0], context, basic=basic)
+            return Expression.from_(nodes[0], context, constexpr=constexpr)
 
     @classmethod
     def parse_unary(
@@ -366,22 +387,22 @@ class Expression:
         nodes: list[parser.Expr.SubTypes | Expression],
         context: Context,
         *,
-        basic: bool,
+        constexpr: bool,
     ) -> None:
         operator = nodes[index]
         if not isinstance(operator, parser.Operator):
             return
 
         # if there is another unary operator after this one, this should parse it
-        cls.parse_unary(index + 1, nodes, context, basic=basic)
+        cls.parse_unary(index + 1, nodes, context, constexpr=constexpr)
         if operator.op in (OperatorType.ADD, OperatorType.SUB):
             new_expr: Expression = (
-                Positive(operator, Expression.from_(nodes[index + 1], context, basic=basic))
+                Positive(operator, Expression.from_(nodes[index + 1], context, constexpr=constexpr))
                 if operator.op == OperatorType.ADD
-                else Negative(operator, Expression.from_(nodes[index + 1], context, basic=basic))
+                else Negative(operator, Expression.from_(nodes[index + 1], context, constexpr=constexpr))
             )
         elif operator.op == OperatorType.NOT:
-            new_expr = Not(operator, Expression.from_(nodes[index + 1], context, basic=basic))
+            new_expr = Not(operator, Expression.from_(nodes[index + 1], context, constexpr=constexpr))
         else:
             msg = f"[COMPILER BUG] Invalid unary operator: {operator}"
             raise TypeError(msg)
@@ -562,12 +583,12 @@ class Binding(Expression):
     precedence: int = 5
 
     @classmethod
-    def parse(cls: type[Self], binding: parser.Binding, context: Context) -> Binding:  # type: ignore[override]
+    def parse(cls: type[Self], binding: parser.Binding, context: Context, *, constexpr: bool = False) -> Binding:  # type: ignore[override]
         if isinstance(binding, parser.Variable):
-            return Variable(binding.name, context)
+            return Variable(binding.name, context, constexpr=constexpr)
         elif isinstance(binding, parser.Indexing):
             return Indexing(
-                Binding.parse(binding.sub, context),
+                Binding.parse(binding.sub, context, constexpr=constexpr),
                 Expression.parse(binding.index, context),
                 binding.bracket_span,
             )
@@ -579,10 +600,18 @@ class Binding(Expression):
 class Variable(Binding):
     name: SpannedStr
 
-    def __init__(self: Self, name: SpannedStr, context: Context) -> None:
-        typ = context.lookup_variable(name)[0].value
-        if typ == Value:
-            Error(f"Cannot find declaration for variable {name}").at(name.span).log()
+    def __init__(self: Self, name: SpannedStr, context: Context, *, constexpr: bool = False) -> None:
+        if constexpr:
+            typ = context.lookup_constant(name)[0].value
+            if typ == Value:
+                e = Error(f"Cannot find declaration for constant {name}").at(name.span)
+                if context.lookup_variable(name)[0].value != Value:
+                    e.hint("found a variable with this name, but variables can't be used to compute constants values")
+                e.log()
+        else:
+            typ = context.lookup_variable(name)[0].value
+            if typ == Value:
+                Error(f"Cannot find declaration for variable {name}").at(name.span).log()
 
         super().__init__(typ, name.span)
         self.name = name
@@ -987,8 +1016,16 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
     return statements
 
 
-def parse(nodes: Iterable[Node[Any]]) -> tuple[list[Program | Function], Context]:
+def parse(
+    nodes: Iterable[Node[Any]],
+    constants: list[parser.TypeDef],
+) -> tuple[list[Program | Function], Context]:
     context = Context()
+
+    for constant in constants:
+        # the parser already checked that this is not None
+        value = Expression.parse(cast(parser.Expr, constant.default), context, constexpr=True)
+        context.add_constant(constant.name, constant.typ, value)
 
     unparsed_program = []
     unparsed_function = []
