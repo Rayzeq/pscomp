@@ -61,6 +61,7 @@ fonction pow(number: reel) retourne reel
 fonction sin(number: reel) retourne reel
 fonction cos(number: reel) retourne reel
 fonction exp(number: reel) retourne reel
+fonction log(number: reel) retourne reel
 
 source: "random"
 fonction random() retourne reel
