@@ -1082,7 +1082,11 @@ def check_token(token: Token[Any] | None, expected: Sequence[T | type[T]]) -> bo
 
 
 def _parse(stream: TokenStream) -> tuple[list[Node[Any]], list[TypeDef]]:
-    typdefs = Block._parse_typedefs(stream)
+    if stream.try_peek() == KEYWORDS.avec:
+        typdefs = Block._parse_typedefs(stream)
+    else:
+        typdefs = []
+
     for constant in typdefs:
         if not constant.name.isupper():
             Warn("Constant should be UPPER_CASE").at(constant.name.span).replacement(
