@@ -432,8 +432,8 @@ class List(Type):
     rmod = Type._never
     pow = Type._never
     rpow = Type._never
-    eq = Type._self("eq")
-    req = Type._rself
+    eq = Type._self_bool("eq")
+    req = Type._rself_bool
     order = Type._never
     rorder = Type._never
     assign = Type._self("assign")

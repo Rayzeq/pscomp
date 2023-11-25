@@ -137,6 +137,243 @@ class Value(Node["Value"]):
     def __repr__(self: Self) -> str:
         return f"{self.typ.name}({self.value})"
 
+    def __bool__(self: Self) -> Value:
+        new_type = Bool().assign(self.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(Bool(), bool(self.value))
+
+    def __pos__(self: Self) -> Value:
+        new_type = self.typ.pos()
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, +self.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def __neg__(self: Self) -> Value:
+        new_type = self.typ.neg()
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, -self.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def __pow__(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.pow(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value**other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    __rpow__ = __pow__
+
+    def __mul__(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.mul(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value * other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    __rmul__ = __mul__
+
+    def __div__(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.div(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+
+        if isinstance(new_type, Integer):
+            return Value(new_type, self.value // other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+        else:
+            return Value(new_type, self.value / other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    __rdiv__ = __div__
+
+    def __mod__(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.mod(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value % other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    __rmod__ = __mod__
+
+    def __add__(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.add(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value + other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    __radd__ = __add__
+
+    def __sub__(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.sub(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value - other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    __rsub__ = __sub__
+
+    def eq(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.eq(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value == other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def ne(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.eq(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value != other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def lt(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.order(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value < other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def gt(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.order(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value > other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def le(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.order(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value <= other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+    def ge(self: Self, other: object) -> Value:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        new_type = self.typ.order(other.typ)
+        if not new_type or isinstance(new_type, AnyType):
+            return Unknown()
+        return Value(new_type, self.value >= other.value)  # type: ignore[operator] # the type is checked using self.typ and other.typ
+
+
+class Unknown(Value):
+    def __init__(self: Self) -> None:
+        self.typ = AnyType()
+
+    def __pos__(self: Self) -> Unknown:
+        return self
+
+    def __neg__(self: Self) -> Unknown:
+        return self
+
+    def __pow__(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    __rpow__ = __pow__
+
+    def __mul__(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    __rmul__ = __mul__
+
+    def __div__(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    __rdiv__ = __div__
+
+    def __mod__(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    __rmod__ = __mod__
+
+    def __add__(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    __radd__ = __add__
+
+    def __sub__(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    __rsub__ = __sub__
+
+    def eq(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    def ne(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    def lt(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    def gt(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    def le(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
+    def ge(self: Self, other: object) -> Unknown:
+        if not isinstance(other, Value):
+            return NotImplemented
+
+        return self
+
 
 TYPES: dict[lexer.Identifier, type[Type]] = {
     KEYWORDS.booleen: Bool,

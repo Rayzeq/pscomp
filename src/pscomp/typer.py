@@ -9,6 +9,7 @@ from . import parser
 from .lexer import OperatorType
 from .logger import Error, Warn
 from .parser import Node, Value
+from .parser import Unknown as UnknownValue
 from .source import Span, SpannedStr
 from .types import Any as AnyType
 from .types import Bool, Char, Float, Integer, List, String, Type, Void
@@ -438,6 +439,9 @@ class Expression:
         self.typ = typ
         self.span = span
 
+    def compute(self: Self) -> Value:
+        return UnknownValue()
+
 
 class Literal(Expression):
     precedence = 5
@@ -446,6 +450,9 @@ class Literal(Expression):
     def __init__(self: Self, value: Value) -> None:
         super().__init__(value.typ, value.span)
         self.value = value
+
+    def compute(self: Self) -> Value:
+        return self.value
 
 
 class Unary(Expression, ABC):
@@ -467,9 +474,14 @@ class Unary(Expression, ABC):
                 msg=f"this is of type {self.right.typ.name}",
             ).log()
 
+    @abstractmethod
+    def compute(self: Self) -> Value:
+        ...
+
 
 class Binary(Expression):
     check_func: str
+    compute_func: str
 
     @classmethod
     def _check_types(
@@ -513,7 +525,7 @@ class Binary(Expression):
 
     @classmethod
     def check(cls: type[Self], left: Type, right: Type) -> Type | None:
-        return getattr(left, cls.check_func)(right)
+        return getattr(left, cls.check_func)(right)  # type: ignore[no-any-return]
 
     left: Expression
     right: Expression
@@ -524,6 +536,9 @@ class Binary(Expression):
         self.left = left
         self.right = right
 
+    def compute(self: Self) -> Value:
+        return getattr(self.left.compute(), self.compute_func)(self.right.compute())  # type: ignore[no-any-return]
+
 
 class Positive(Unary):
     precedence = 3
@@ -531,6 +546,9 @@ class Positive(Unary):
     @classmethod
     def check(cls: type[Self], typ: Type) -> Type | None:
         return typ.pos()
+
+    def compute(self: Self) -> Value:
+        return +self.right.compute()
 
 
 class Negative(Unary):
@@ -540,6 +558,9 @@ class Negative(Unary):
     def check(cls: type[Self], typ: Type) -> Type | None:
         return typ.neg()
 
+    def compute(self: Self) -> Value:
+        return -self.right.compute()
+
 
 class Not(Unary):
     precedence = 0
@@ -548,65 +569,80 @@ class Not(Unary):
     def check(cls: type[Self], typ: Type) -> Type | None:
         return Bool().assign(typ)
 
+    def compute(self: Self) -> Value:
+        return Value(Bool(), not bool(self.right.compute()))
+
 
 class Power(Binary):
     precedence = 4
     check_func = "pow"
+    compute_func = "__pow__"
 
 
 class Multiply(Binary):
     precedence = 3
     check_func = "mul"
+    compute_func = "__mul__"
 
 
 class Divide(Binary):
     precedence = 3
     check_func = "div"
+    compute_func = "__div__"
 
 
 class Modulo(Binary):
     precedence = 3
     check_func = "mod"
+    compute_func = "__mod__"
 
 
 class Add(Binary):
     precedence = 2
     check_func = "add"
+    compute_func = "__add__"
 
 
 class Substract(Binary):
     precedence = 2
     check_func = "sub"
+    compute_func = "__sub__"
 
 
 class Equal(Binary):
     precedence = 1
     check_func = "eq"
+    compute_func = "eq"
 
 
 class NotEqual(Binary):
     precedence = 1
     check_func = "eq"
+    compute_func = "ne"
 
 
 class LessThan(Binary):
     precedence = 1
     check_func = "order"
+    compute_func = "lt"
 
 
 class GreaterThan(Binary):
     precedence = 1
     check_func = "order"
+    compute_func = "gt"
 
 
 class LessThanOrEqual(Binary):
     precedence = 1
     check_func = "order"
+    compute_func = "le"
 
 
 class GreaterThanOrEqual(Binary):
     precedence = 1
     check_func = "order"
+    compute_func = "ge"
 
 
 class Or(Binary):
@@ -616,6 +652,9 @@ class Or(Binary):
     def check(cls: type[Self], left: Type, right: Type) -> Type | None:
         return Bool().assign(left) and Bool().assign(right)
 
+    def compute(self: Self) -> Value:
+        return self.left.compute() or self.right.compute()
+
 
 class And(Binary):
     precedence = 0
@@ -623,6 +662,9 @@ class And(Binary):
     @classmethod
     def check(cls: type[Self], left: Type, right: Type) -> Type | None:
         return Bool().assign(left) and Bool().assign(right)
+
+    def compute(self: Self) -> Value:
+        return self.left.compute() and self.right.compute()
 
 
 class Binding(Expression):
@@ -645,10 +687,12 @@ class Binding(Expression):
 
 class Variable(Binding):
     name: SpannedStr
+    value: Expression | None = None
 
     def __init__(self: Self, name: SpannedStr, context: Context, *, constexpr: bool = False) -> None:
         if constexpr:
-            typ = context.lookup_constant(name)[0]
+            typ, value = context.lookup_constant(name)
+            self.value = value
             if isinstance(typ, AnyType):
                 e = Error(f"Cannot find declaration for constant {name}").at(name.span)
                 if not isinstance(context.lookup_variable(name)[0], AnyType):
@@ -661,6 +705,11 @@ class Variable(Binding):
 
         super().__init__(typ, name.span)
         self.name = name
+
+    def compute(self: Self) -> Value:
+        if self.value is None:
+            return UnknownValue()
+        return self.value.compute()
 
 
 class Indexing(Binding):
