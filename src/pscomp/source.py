@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO, TypeVar, overload
 
+from .errors import InternalCompilerError
+
 if TYPE_CHECKING:
     from typing_extensions import Self
 
@@ -169,15 +171,15 @@ class Span:
 
     @classmethod
     @overload
-    def at(cls: type[Self], file: SourceFile, position: int, /) -> Self:
+    def at(cls: type[Self], file: SourceFile, position: Position, /) -> Self:
         ...
 
     @classmethod
-    def at(cls: type[Self], file_or_pos: SourceFile | Position, position: int | None = None, /) -> Self:
+    def at(cls: type[Self], file_or_pos: SourceFile | Position, position: Position | None = None, /) -> Self:
         if isinstance(file_or_pos, SourceFile):
             if position is None:
-                msg = "[COMPILER BUG] Position must not be null"
-                raise ValueError(msg)
+                msg = "Position must not be null when specifiying a file"
+                raise InternalCompilerError(msg)
             return cls(file_or_pos, position, position)
         else:
             return cls(file_or_pos.file, file_or_pos, file_or_pos)
@@ -185,8 +187,8 @@ class Span:
     @classmethod
     def from_(cls: type[Self], start: Position, end: Position) -> Self:
         if start.file is not end.file:
-            msg = "[COMPILER BUG] File of start and end span must be equal"
-            raise ValueError(msg)
+            msg = "File of start and end span must be the same"
+            raise InternalCompilerError(msg)
         return cls(start.file, start, end)
 
     def __init__(self: Self, file: SourceFile, start: int, end: int) -> None:

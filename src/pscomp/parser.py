@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Sequence, TypeAlias, TypeVar, cast, overload
 
 from . import lexer
+from .errors import InternalCompilerError
 from .lexer import KEYWORDS, Token
 from .logger import Error, Warn
 from .source import Position, Span, SpannedStr
@@ -17,10 +18,6 @@ if TYPE_CHECKING:
 
 class ParserError(Exception):
     """There was an unrecoverable syntax error while parsing."""
-
-
-class InternalCompilerError(Exception):
-    """There was a bug in the compiler."""
 
 
 class TokenStream:

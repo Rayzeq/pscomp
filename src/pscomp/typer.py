@@ -6,6 +6,7 @@ from functools import reduce
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from . import parser
+from .errors import InternalCompilerError
 from .lexer import OperatorType
 from .logger import Error, Warn
 from .parser import Node, Value
@@ -337,8 +338,8 @@ class Expression:
         elif isinstance(node, parser.FuncCall):
             return FuncCall.parse(node, context)
         else:
-            msg = f"[COMPILER BUG] Missing support for {type(node).__name__}"
-            raise TypeError(msg)
+            msg = f"Cannot make an expression from {node}"
+            raise InternalCompilerError(msg)
 
     @classmethod
     def parse(cls: type[Self], expr: parser.Expr, context: Context, *, constexpr: bool = False) -> Expression:
@@ -372,8 +373,8 @@ class Expression:
                     op_index = i
                     break
             else:
-                msg = "[COMPILER BUG] Unreachable"
-                raise ValueError(msg)
+                msg = f"Could not find an operator with a precedence of {max_precedence}"
+                raise InternalCompilerError(msg)
 
             operator = cast(parser.Operator, nodes[op_index])
             if (
@@ -394,8 +395,8 @@ class Expression:
                 nodes.pop(op_index)
 
         if len(nodes) > 1:
-            msg = "[COMPILER BUG] Unreachable"
-            raise ValueError(msg)
+            msg = f"Several nodes remaining after parsing expression: {nodes}"
+            raise InternalCompilerError(msg)
 
         if isinstance(nodes[0], Expression):
             return nodes[0]
@@ -426,8 +427,8 @@ class Expression:
         elif operator.op == OperatorType.NOT:
             new_expr = Not(operator, Expression.from_(nodes[index + 1], context, constexpr=constexpr))
         else:
-            msg = f"[COMPILER BUG] Invalid unary operator: {operator}"
-            raise TypeError(msg)
+            msg = f"Invalid unary operator: {operator}"
+            raise InternalCompilerError(msg)
 
         nodes[index] = new_expr
         nodes.pop(index + 1)
@@ -686,8 +687,8 @@ class Binding(Expression):
                 binding.bracket_span,
             )
         else:
-            msg = f"[COMPILER BUG] Missing support for binding {type(binding).__name__}"
-            raise TypeError(msg)
+            msg = f"Cannot parse binding: {binding}"
+            raise InternalCompilerError(msg)
 
 
 class Variable(Binding):
@@ -1106,8 +1107,8 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
 
             statements.append(DoWhileLoop(condition, body))
         else:
-            msg = f"[COMPILER BUG] missing support for statement {type(node).__name__}"
-            raise TypeError(msg)
+            msg = f"Cannot parse statement: {node}"
+            raise InternalCompilerError(msg)
 
     return statements
 

@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Callable
 from typing import Any as TAny
 
+from .errors import InternalCompilerError
+
 if TYPE_CHECKING:
     from typing_extensions import Self
 
@@ -394,7 +396,7 @@ class String(Type):
 class List(Type):
     @classmethod
     def from_(cls: type[Self], binding: Binding, typ_: Type) -> Type:
-        from .parser import Indexing, InternalCompilerError, Variable
+        from .parser import Indexing, Variable
 
         if isinstance(binding, Variable):
             return typ_

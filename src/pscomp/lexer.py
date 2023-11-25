@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
+from .errors import InternalCompilerError
 from .logger import Error, Warn
 from .source import FileSection, Position, SourceFile, Span, SpannedStr
 
@@ -71,8 +72,8 @@ class Token(ABC, Generic[T]):
 class NoParse(Token["Never"]):
     @classmethod
     def _parse(cls: type[Self], _: StringReader) -> Never:
-        msg = f"[COMPILER BUG] Can't call {cls.__name__}.parse directly"
-        raise NotImplementedError(msg)
+        msg = f"Can't call {cls.__name__}.parse directly"
+        raise InternalCompilerError(msg)
 
 
 class SingleCharToken(Token["SingleCharToken"]):

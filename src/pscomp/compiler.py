@@ -3,8 +3,7 @@ from __future__ import annotations
 from itertools import tee, zip_longest
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-from . import typer
-from .parser import InternalCompilerError, Value
+from .errors import InternalCompilerError
 from .typer import (
     Add,
     And,
@@ -51,6 +50,8 @@ from .types import Bool, Char, Float, Integer, List, String, Type, Void
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
+    from . import typer
+    from .parser import Value
 
 CASTMAP = {
     Integer: int,
