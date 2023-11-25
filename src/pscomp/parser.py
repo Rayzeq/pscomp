@@ -1,20 +1,26 @@
 from __future__ import annotations
 
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Sequence, TypeAlias, TypeVar, cast, overload
 
 from . import lexer
 from .lexer import KEYWORDS, Token
 from .logger import Error, Warn
-from .source import Position, Span, Spanned, SpannedStr
+from .source import Position, Span, SpannedStr
+from .types import Any as AnyType
+from .types import Bool, Char, Float, Integer, List, String, Type
 
 if TYPE_CHECKING:
     from typing_extensions import Never, Self
 
 
 class ParserError(Exception):
-    """There was an unrecoverable error while parsing."""
+    """There was an unrecoverable syntax error while parsing."""
+
+
+class InternalCompilerError(Exception):
+    """There was a bug in the compiler."""
 
 
 class TokenStream:
@@ -87,14 +93,11 @@ class Node(ABC, Generic[N]):
 class NoParse(Node["Never"]):
     @classmethod
     def _parse(cls: type[NoParse], _stream: TokenStream) -> Never:
-        msg = f"[COMPILER BUG] Can't call {cls.__name__}.parse directly"
-        raise NotImplementedError(msg)
+        msg = f"Can't call {cls.__name__}.parse directly"
+        raise InternalCompilerError(msg)
 
 
-V = TypeVar("V")
-
-
-class Value(Node["Value[Any]"], Generic[V]):
+class Value(Node["Value"]):
     TOKENS: tuple[Token[Any] | type[Token[Any]], ...] = (
         KEYWORDS.vrai,
         KEYWORDS.faux,
@@ -103,117 +106,39 @@ class Value(Node["Value[Any]"], Generic[V]):
         lexer.Char,
         lexer.String,
     )
-    name: str = "<unknown>"
 
     @classmethod
-    def _parse(cls: type[Self], stream: TokenStream) -> Value[Any]:
+    def _parse(cls: type[Self], stream: TokenStream) -> Self:
         next_token = assert_token(stream.try_pop(), cls.TOKENS)
 
         if next_token == KEYWORDS.vrai:
-            return Bool(value=True)
+            return cls(Bool(), value=True)
         elif next_token == KEYWORDS.faux:
-            return Bool(value=False)
+            return cls(Bool(), value=False)
         elif isinstance(next_token, lexer.Integer):
-            return Integer(next_token.value)
+            return cls(Integer(), next_token.value)
         elif isinstance(next_token, lexer.Float):
-            return Float(next_token.value)
+            return cls(Float(), next_token.value)
         elif isinstance(next_token, lexer.Char):
-            return Char(next_token.value)
+            return cls(Char(), next_token.value)
         elif isinstance(next_token, lexer.String):
-            return String(next_token.value)
+            return cls(String(), next_token.value)
         else:
-            msg = "[COMPILER BUG] Unreachable code"
-            raise ValueError(msg)
+            msg = f"Invalid literal: {next_token}"
+            raise InternalCompilerError(msg)
 
-    value: V
+    typ: Type
+    value: bool | int | float | str
 
-    def __init__(self: Self, value: V) -> None:
+    def __init__(self: Self, typ: Type, value: bool | int | float | str) -> None:
+        self.typ = typ
         self.value = value
 
     def __repr__(self: Self) -> str:
-        return f"{type(self).__name__}({self.value})"
+        return f"{self.typ.name}({self.value})"
 
 
-class Void(Value[None]):
-    name: str = "<rien>"
-
-
-class Bool(Value[bool]):
-    name: str = "booleen"
-    value: bool
-
-
-class Integer(Value[int]):
-    name: str = "entier"
-    value: int
-
-
-class Float(Value[float]):
-    name: str = "reel"
-    value: float
-
-
-class Char(Value[str]):
-    name: str = "car"
-    value: str
-
-
-class String(Value[str]):
-    name: str = "chaine"
-    value: str
-
-
-SV = TypeVar("SV", bound=Value[Any])
-
-
-class ListMeta(ABCMeta, Generic[SV]):
-    name: str
-    length: Expr
-    subtype: type[SV]
-
-    def __getitem__(cls: ListMeta[SV], subtype_and_size: tuple[type[Value[Any]], Expr]) -> type[List[Any]]:
-        subtype, size = subtype_and_size
-
-        if hasattr(cls, "subtype"):
-            msg = f"[COMPILER BUG] Cannot make a new subclass of {cls.__name__} because it's not the base class"
-            raise ValueError(msg)
-
-        self: type[List[Any]] = type(
-            f"{cls.__name__}[{subtype.__name__}, {size}]",
-            (cls,),
-            {"name": f"{cls.name}[{subtype.name}]", "length": size, "subtype": subtype, "value": []},
-        )
-
-        return self
-
-    def __eq__(cls: ListMeta[SV], other: object) -> bool:
-        if not isinstance(other, ListMeta):
-            return NotImplemented
-        return (cls.length, cls.subtype) == (other.length, other.subtype)
-
-    def __hash__(cls: ListMeta[SV]) -> int:
-        # this is needed by issubclass
-        # TODO: make a constexpr calculator to be able to do typechecking with list length
-        return hash(cls.subtype)
-
-
-class List(Value[list[SV]], Generic[SV], metaclass=ListMeta):
-    name = "tableau"
-
-    @classmethod
-    def from_(cls: type[Self], binding: Binding, typ_: type[SV]) -> type[List[Any] | SV]:
-        if isinstance(binding, Variable):
-            return typ_
-        elif isinstance(binding, Indexing):
-            return cls[cls.from_(binding.sub, typ_), binding.index]
-        else:
-            msg = "[COMPILER BUG] Unreachable"
-            raise TypeError(msg)
-
-    value: list[SV]
-
-
-TYPES: dict[lexer.Identifier, type[Value[Any]]] = {
+TYPES: dict[lexer.Identifier, type[Type]] = {
     KEYWORDS.booleen: Bool,
     KEYWORDS.entier: Integer,
     KEYWORDS.reel: Float,
@@ -262,9 +187,9 @@ class Callable(Node["Callable[N]"], Generic[N]):
 
             assert_token(stream.try_pop(), lexer.Colon)
             typ_tok = assert_token(stream.try_pop(), tuple(TYPES.keys()))
-            typ = List.from_(binding, TYPES[typ_tok])
+            typ = List.from_(binding, TYPES[typ_tok](typ_tok.span))
 
-            typedefs.append(TypeDef(binding.get_name(), Spanned(typ, span=typ_tok.span), None))
+            typedefs.append(TypeDef(binding.get_name(), typ, None))
 
             if isinstance(stream.try_peek(), lexer.Comma):
                 stream.pop()
@@ -290,20 +215,18 @@ class Function(Callable["Function"]):
                 (introducer.span, "procedure"),
                 msg="if you don't want to return anything, use a `procedure`",
             ).log()
-            ret: type[Value[Any]] = Value
-            rspan = Span.at(stream.last_pos)
+            ret: Type = AnyType(Span.at(stream.last_pos))
         else:
             assert_token(stream.try_pop(), KEYWORDS.retourne, crash=False)
             typ_ = assert_token(stream.try_peek(), list(TYPES.keys()))
-            ret = List.from_(Binding.parse(stream), TYPES[typ_])
-            rspan = typ_.span
+            ret = List.from_(Binding.parse(stream), TYPES[typ_](typ_.span))
 
         typedefs, body = Block.parse(stream, name, KEYWORDS.debut, [KEYWORDS.fin], typedefs=True)
-        return cls(name, args, rspan.wrap(ret), typedefs, body)
+        return cls(name, args, ret, typedefs, body)
 
     name: SpannedStr
     args: list[TypeDef]
-    ret: Spanned[type[Value[Any]]]
+    ret: Type
     types: list[TypeDef]
     body: list[Node[Any]]
 
@@ -311,7 +234,7 @@ class Function(Callable["Function"]):
         self: Self,
         name: SpannedStr,
         args: list[TypeDef],
-        ret: Spanned[type[Value[Any]]],
+        ret: Type,
         types: list[TypeDef],
         body: list[Node[Any]],
     ) -> None:
@@ -444,13 +367,13 @@ class Switch(Node["Switch"]):
         return cls(binding, blocks, default)
 
     binding: Binding
-    blocks: list[tuple[Value[Any], list[Node[Any]]]]
+    blocks: list[tuple[Value, list[Node[Any]]]]
     default: list[Node[Any]] | None
 
     def __init__(
         self: Self,
         binding: Binding,
-        blocks: list[tuple[Value[Any], list[Node[Any]]]],
+        blocks: list[tuple[Value, list[Node[Any]]]],
         default: list[Node[Any]] | None,
     ) -> None:
         self.binding = binding
@@ -709,7 +632,7 @@ class Expr(Node["Expr"]):
         lexer.Identifier,
         lexer.LParen,
     )
-    SubTypes: TypeAlias = Value[Any] | FuncCall | "Binding" | "Expr" | "Operator"
+    SubTypes: TypeAlias = "Value | FuncCall | Binding | Expr | Operator"
 
     @classmethod
     def _parse(cls: type[Self], stream: TokenStream) -> Self:
@@ -743,8 +666,8 @@ class Expr(Node["Expr"]):
                     stream.pop()
                     nodes.append(Operator(next_token))
                 else:
-                    msg = "[COMPILER BUG] Unreachable"
-                    raise ValueError(msg)
+                    msg = f"Invalid token in expression: {next_token}"
+                    raise InternalCompilerError(msg)
             elif isinstance(next_token, lexer.Operator):
                 stream.pop()
                 nodes.append(Operator(next_token))
@@ -785,8 +708,8 @@ class Binding(Node["Binding"]):
         elif isinstance(self, Indexing):
             return self.sub.get_name()
         else:
-            msg = "[COMPILER BUG] Unreachable"
-            raise TypeError(msg)
+            msg = f"Cannot get binding name: {self}"
+            raise InternalCompilerError(msg)
 
 
 class Variable(Binding):
@@ -827,7 +750,7 @@ class Operator(NoParse):
 @dataclass
 class TypeDef:
     name: SpannedStr
-    typ: Spanned[type[Value[Any]]]
+    typ: Type
     default: Expr | None
 
 
@@ -952,7 +875,7 @@ class Block:
             assert_token(stream.try_pop(), lexer.Colon)
 
             typ_tok = assert_token(stream.try_pop(), tuple(TYPES.keys()))
-            typ_ = TYPES[typ_tok]
+            typ_ = TYPES[typ_tok](typ_tok.span)
             value = None
             if isinstance(stream.try_peek(), lexer.Assign):
                 stream.pop()
@@ -960,7 +883,7 @@ class Block:
 
             for binding in bindings:
                 typ = List.from_(binding, typ_)
-                typedefs.append(TypeDef(binding.get_name(), Spanned(typ, span=typ_tok.span), value))
+                typedefs.append(TypeDef(binding.get_name(), typ, value))
 
         return typedefs
 

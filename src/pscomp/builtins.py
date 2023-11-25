@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from . import lexer
-from .parser import Float, Integer, Value
-from .source import SourceFile, Spanned
+from .source import SourceFile
 from .typer import Argument, BuiltinSignature
+from .types import Any as AnyType
+from .types import Float, Integer, Type
 
 
 def _i(token: lexer.Token) -> lexer.Identifier:
@@ -32,7 +33,7 @@ def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSign
             arg_name = _i(tokens.pop(0)).name
             tokens.pop(0)  # :
             arg_typ = _i(tokens.pop(0))
-            args.append(Argument(arg_name, arg_typ.span.wrap(_TYPES[arg_typ.name])))
+            args.append(Argument(arg_name, _TYPES[arg_typ.name](arg_typ.span)))
             if isinstance(tokens[0], lexer.Comma):
                 tokens.pop(0)
 
@@ -42,7 +43,7 @@ def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSign
         ret_typ = _i(tokens.pop(0))
 
         source = ".".join(filter(bool, [current_source, name]))
-        result[name] = BuiltinSignature(name, args, ret_typ.span.wrap(_TYPES[ret_typ.name]), source=source)
+        result[name] = BuiltinSignature(name, args, _TYPES[ret_typ.name](ret_typ.span), source=source)
 
     return result
 
@@ -69,12 +70,12 @@ fonction random() retourne reel
     path="<builtins>",
 )
 
-_TYPES: dict[str, type[Value[Any]]] = {
+_TYPES: dict[str, type[Type]] = {
     "entier": Integer,
     "reel": Float,
 }
 _tokens = lexer.lexer(BuiltinSource.sections[0])
 
-Unknown = Spanned(Value, span=_tokens.pop(0).span)
+Unknown = AnyType(_tokens.pop(0).span)
 
 builtins = _parse_builtin_functions(_tokens)

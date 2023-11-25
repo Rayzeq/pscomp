@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import reduce
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -8,7 +9,9 @@ from . import parser
 from .lexer import OperatorType
 from .logger import Error, Warn
 from .parser import Node, Value
-from .source import Span, Spanned, SpannedStr
+from .source import Span, SpannedStr
+from .types import Any as AnyType
+from .types import Bool, Char, Float, Integer, List, String, Type, Void
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -18,9 +21,9 @@ if TYPE_CHECKING:
 
 class Argument:
     name: SpannedStr
-    typ: Spanned[type[Value[Any]]]
+    typ: Type
 
-    def __init__(self: Self, name: SpannedStr, typ: Spanned[type[Value[Any]]]) -> None:
+    def __init__(self: Self, name: SpannedStr, typ: Type) -> None:
         self.name = name
         self.typ = typ
 
@@ -29,12 +32,12 @@ class Argument:
         return self.name.span + self.typ.span
 
     def __str__(self: Self) -> str:
-        return f"{self.name}: {self.typ.value.__name__}"
+        return f"{self.name}: {self.typ.name}"
 
 
 class Reference(Argument):
     def __str__(self: Self) -> str:
-        return f"{self.name}: &{self.typ.value.__name__}"
+        return f"{self.name}: &{self.typ.name}"
 
 
 class Signature:
@@ -56,13 +59,13 @@ class Signature:
 
     name: SpannedStr
     args: list[Argument]
-    ret: Spanned[type[Value[Any]]] | None
+    ret: Type | None
 
     def __init__(
         self: Self,
         name: SpannedStr,
         args: list[Argument],
-        ret: Spanned[type[Value[Any]]] | None = None,
+        ret: Type | None = None,
     ) -> None:
         self.name = name
         self.args = args
@@ -77,7 +80,7 @@ class Signature:
         return [arg for arg in self.args if isinstance(arg, Reference)]
 
     def __str__(self: Self) -> str:
-        return f"{self.name}({', '.join(str(arg) for arg in self.args)}){(' -> ' + self.ret.value.__name__) if self.ret else ''}"
+        return f"{self.name}({', '.join(str(arg) for arg in self.args)}){(' -> ' + self.ret.name) if self.ret else ''}"
 
 
 class BuiltinSignature(Signature):
@@ -87,7 +90,7 @@ class BuiltinSignature(Signature):
         self: Self,
         name: SpannedStr,
         args: list[Argument],
-        ret: Spanned[type[Value[Any]]] | None = None,
+        ret: Type | None = None,
         *,
         source: str,
     ) -> None:
@@ -104,10 +107,10 @@ from .builtins import Unknown, builtins  # noqa: E402 - prevent circular import
 
 class Context:
     python_imports: dict[str, set[str]]
-    constants: dict[SpannedStr, tuple[Spanned[type[Value[Any]]], Expression]]
+    constants: dict[SpannedStr, tuple[Type, Expression]]
     functions: dict[str, Signature]
-    variables: dict[SpannedStr, tuple[Spanned[type[Value[Any]]], Expression | None]]
-    ret_type: Spanned[type[Value[Any]]] | None
+    variables: dict[SpannedStr, tuple[Type, Expression | None]]
+    ret_type: Type | None
 
     def __init__(self: Self) -> None:
         self.python_imports = {}
@@ -116,21 +119,21 @@ class Context:
         self.variables = {}
         self.ret_type = None
 
-    def add_constant(self: Self, name: SpannedStr, typ: Spanned[type[Value[Any]]], value: Expression) -> None:
+    def add_constant(self: Self, name: SpannedStr, typ: Type, value: Expression) -> None:
         if name in self.constants:
             Warn(f"A constant named {name} is already defined, latest definition will be used").at(
                 name.span,
             ).comment(next(n for n in self.constants if n == name).span, "previous definition here").log()
 
-        if value is not None and not issubclass(value.typ, typ.value):
-            Error(f"`{name}` has type {typ.value.name} but value has type {value.typ.name}").at(
+        if not typ.assign(value.typ):
+            Error(f"`{name}` has type {typ.name} but value has type {value.typ.name}").at(
                 value.span,
                 msg=f"this of type {value.typ.name}",
             ).comment(typ.span, "the variable's type is set here").log()
         self.constants[name] = (typ, value)
         self.add_variable(name, typ, value)
 
-    def lookup_constant(self: Self, name: str) -> tuple[Spanned[type[Value[Any]]], Expression | None]:
+    def lookup_constant(self: Self, name: str) -> tuple[Type, Expression | None]:
         if name in self.constants:
             return self.constants[cast(SpannedStr, name)]
 
@@ -158,20 +161,20 @@ class Context:
 
         return None
 
-    def add_variable(self: Self, name: SpannedStr, typ: Spanned[type[Value[Any]]], value: Expression | None) -> None:
+    def add_variable(self: Self, name: SpannedStr, typ: Type, value: Expression | None) -> None:
         if name in self.variables:
             Warn(f"A variable named {name} is already defined, latest definition will be used").at(
                 name.span,
             ).comment(next(n for n in self.variables if n == name).span, "previous definition here").log()
 
-        if value is not None and not issubclass(value.typ, typ.value):
-            Error(f"`{name}` has type {typ.value.name} but value has type {value.typ.name}").at(
+        if value is not None and not typ.assign(value.typ):
+            Error(f"`{name}` has type {typ.name} but value has type {value.typ.name}").at(
                 value.span,
                 msg=f"this of type {value.typ.name}",
             ).comment(typ.span, "the variable's type is set here").log()
         self.variables[name] = (typ, value)
 
-    def lookup_variable(self: Self, name: str) -> tuple[Spanned[type[Value[Any]]], Expression | None]:
+    def lookup_variable(self: Self, name: str) -> tuple[Type, Expression | None]:
         if name in self.variables:
             return self.variables[cast(SpannedStr, name)]
 
@@ -192,22 +195,22 @@ class Context:
 @dataclass
 class TypeDef:
     name: SpannedStr
-    typ: Spanned[type[Value[Any]]]
+    typ: Type
     default: Expression | None
 
     @classmethod
     def from_(cls: type[Self], typedef: parser.TypeDef, context: Context) -> Self:
         default = Expression.from_(typedef.default, context, constexpr=True) if typedef.default else None
-        cls._check_indexes(typedef.typ.value, context)
+        cls._check_indexes(typedef.typ, context)
         return cls(typedef.name, typedef.typ, default)
 
     @classmethod
-    def _check_indexes(cls: type[Self], typ: type[Value[Any]], context: Context) -> None:
-        if isinstance(typ, parser.ListMeta):
-            length = Expression.parse(typ.length, context, constexpr=True)  # type: ignore[attr-defined] # mypy don't understand that type[List] == ListMeta
+    def _check_indexes(cls: type[Self], typ: Type, context: Context) -> None:
+        if isinstance(typ, List):
+            length = Expression.parse(typ.length, context, constexpr=True)
             # for the compiler
-            typ.length = length  # type: ignore[attr-defined]
-            cls._check_indexes(typ.subtype, context)  # type: ignore[attr-defined]
+            typ.length = length
+            cls._check_indexes(typ.subtype, context)
 
 
 class Program:
@@ -428,42 +431,57 @@ class Expression:
         return max((cls.PRECEDENCE[node.op] for node in nodes if isinstance(node, parser.Operator)), default=-1)
 
     precedence: int = -1
-    typ: type[Value[Any]]
+    typ: Type
     span: Span
 
-    def __init__(self: Self, typ: type[Value[Any]], span: Span) -> None:
+    def __init__(self: Self, typ: Type, span: Span) -> None:
         self.typ = typ
         self.span = span
 
 
 class Literal(Expression):
-    precedence: int = 5
-    value: Value[Any]
+    precedence = 5
+    value: Value
 
-    def __init__(self: Self, value: Value[Any]) -> None:
-        super().__init__(type(value), value.span)
+    def __init__(self: Self, value: Value) -> None:
+        super().__init__(value.typ, value.span)
         self.value = value
 
 
-class Unary(Expression):
+class Unary(Expression, ABC):
+    @classmethod
+    @abstractmethod
+    def check(cls: type[Self], right: Type) -> Type | None:
+        ...
+
     right: Expression
 
     def __init__(self: Self, operator: parser.Operator, right: Expression) -> None:
-        super().__init__(right.typ, operator.span + right.span)
+        new_type = self.check(right.typ)
+        super().__init__(new_type or AnyType(), operator.span + right.span)
         self.right = right
+
+        if new_type is None:
+            Error(f"Cannot apply operator {operator.op.value} to {self.right.typ.name}").at(
+                self.right.span,
+                msg=f"this is of type {self.right.typ.name}",
+            ).log()
 
 
 class Binary(Expression):
+    check_func: str
+
     @classmethod
     def _check_types(
         cls: type[Self],
         left: Expression,
         operator: parser.Operator,
         right: Expression,
-    ) -> bool:
-        if left.typ != right.typ:
+    ) -> Type:
+        new_type = cls.check(left.typ, right.typ)
+        if new_type is None:
             error = (
-                Error(f"Incompatible types for operator {cls.__name__}: {left.typ.name} and {right.typ.name}")
+                Error(f"Incompatible types for operator {operator.op.value}: {left.typ.name} and {right.typ.name}")
                 .at(
                     operator.span,
                 )
@@ -478,17 +496,9 @@ class Binary(Expression):
             )
 
             not_float = None
-            if (
-                issubclass(left.typ, parser.Integer)
-                and issubclass(right.typ, parser.Float)
-                and isinstance(left, Literal)
-            ):
+            if isinstance(left.typ, Integer) and isinstance(right.typ, Float) and isinstance(left, Literal):
                 not_float = left
-            if (
-                issubclass(right.typ, parser.Integer)
-                and issubclass(left.typ, parser.Float)
-                and isinstance(right, Literal)
-            ):
+            if isinstance(right.typ, Integer) and isinstance(left.typ, Float) and isinstance(right, Literal):
                 not_float = right
 
             if not_float:
@@ -498,102 +508,125 @@ class Binary(Expression):
                 )
 
             error.log()
-            return False
-        return True
+            return AnyType()
+        return new_type
+
+    @classmethod
+    def check(cls: type[Self], left: Type, right: Type) -> Type | None:
+        return getattr(left, cls.check_func)(right)
 
     left: Expression
     right: Expression
 
     def __init__(self: Self, left: Expression, operator: parser.Operator, right: Expression) -> None:
-        if Value in (left.typ, right.typ) or not self._check_types(left, operator, right):
-            super().__init__(Unknown.value, left.span + right.span)
-        else:
-            super().__init__(left.typ, left.span + right.span)
+        super().__init__(self._check_types(left, operator, right), left.span + right.span)
 
         self.left = left
         self.right = right
 
 
-class Check(Binary):
-    def __init__(self: Self, left: Expression, operator: parser.Operator, right: Expression) -> None:
-        super().__init__(left, operator, right)
-        self.typ = parser.Bool
-
-
 class Positive(Unary):
-    precedence: int = 3
+    precedence = 3
+
+    @classmethod
+    def check(cls: type[Self], typ: Type) -> Type | None:
+        return typ.pos()
 
 
 class Negative(Unary):
-    precedence: int = 3
+    precedence = 3
+
+    @classmethod
+    def check(cls: type[Self], typ: Type) -> Type | None:
+        return typ.neg()
 
 
 class Not(Unary):
-    precedence: int = 0
+    precedence = 0
 
-    def __init__(self: Self, operator: parser.Operator, right: Expression) -> None:
-        super().__init__(operator, right)
-        self.typ = parser.Bool
+    @classmethod
+    def check(cls: type[Self], typ: Type) -> Type | None:
+        return Bool().assign(typ)
 
 
 class Power(Binary):
-    precedence: int = 4
+    precedence = 4
+    check_func = "pow"
 
 
 class Multiply(Binary):
-    precedence: int = 3
+    precedence = 3
+    check_func = "mul"
 
 
 class Divide(Binary):
-    precedence: int = 3
+    precedence = 3
+    check_func = "div"
 
 
 class Modulo(Binary):
-    precedence: int = 3
+    precedence = 3
+    check_func = "mod"
 
 
 class Add(Binary):
-    precedence: int = 2
+    precedence = 2
+    check_func = "add"
 
 
 class Substract(Binary):
-    precedence: int = 2
+    precedence = 2
+    check_func = "sub"
 
 
-class Equal(Check):
-    precedence: int = 1
+class Equal(Binary):
+    precedence = 1
+    check_func = "eq"
 
 
-class NotEqual(Check):
-    precedence: int = 1
+class NotEqual(Binary):
+    precedence = 1
+    check_func = "eq"
 
 
-class LessThan(Check):
-    precedence: int = 1
+class LessThan(Binary):
+    precedence = 1
+    check_func = "order"
 
 
-class GreaterThan(Check):
-    precedence: int = 1
+class GreaterThan(Binary):
+    precedence = 1
+    check_func = "order"
 
 
-class LessThanOrEqual(Check):
-    precedence: int = 1
+class LessThanOrEqual(Binary):
+    precedence = 1
+    check_func = "order"
 
 
-class GreaterThanOrEqual(Check):
-    precedence: int = 1
+class GreaterThanOrEqual(Binary):
+    precedence = 1
+    check_func = "order"
 
 
-class Or(Check):
-    precedence: int = 0
+class Or(Binary):
+    precedence = 0
+
+    @classmethod
+    def check(cls: type[Self], left: Type, right: Type) -> Type | None:
+        return Bool().assign(left) and Bool().assign(right)
 
 
-class And(Check):
-    precedence: int = 0
+class And(Binary):
+    precedence = 0
+
+    @classmethod
+    def check(cls: type[Self], left: Type, right: Type) -> Type | None:
+        return Bool().assign(left) and Bool().assign(right)
 
 
 class Binding(Expression):
-    precedence: int = 5
+    precedence = 5
 
     @classmethod
     def parse(cls: type[Self], binding: parser.Binding, context: Context, *, constexpr: bool = False) -> Binding:  # type: ignore[override]
@@ -615,15 +648,15 @@ class Variable(Binding):
 
     def __init__(self: Self, name: SpannedStr, context: Context, *, constexpr: bool = False) -> None:
         if constexpr:
-            typ = context.lookup_constant(name)[0].value
-            if typ == Value:
+            typ = context.lookup_constant(name)[0]
+            if isinstance(typ, AnyType):
                 e = Error(f"Cannot find declaration for constant {name}").at(name.span)
-                if context.lookup_variable(name)[0].value != Value:
+                if not isinstance(context.lookup_variable(name)[0], AnyType):
                     e.hint("a variable with this name exist, but only constants are allowed in this context")
                 e.log()
         else:
-            typ = context.lookup_variable(name)[0].value
-            if typ == Value:
+            typ = context.lookup_variable(name)[0]
+            if isinstance(typ, AnyType):
                 Error(f"Cannot find declaration for variable {name}").at(name.span).log()
 
         super().__init__(typ, name.span)
@@ -636,19 +669,19 @@ class Indexing(Binding):
     brackets_span: Span
 
     def __init__(self: Self, base: Binding, index: Expression, brackets_span: Span) -> None:
-        if base.typ == Value:
-            typ = Unknown.value
-        elif issubclass(base.typ, parser.List):
+        if isinstance(base.typ, AnyType):
+            typ: Type = base.typ
+        elif isinstance(base.typ, List):
             typ = base.typ.subtype
         else:
             Error(f"Cannot index {base.typ.name}").at(brackets_span).comment(
                 base.span,
                 f"this is of type `{base.typ.name}`",
             ).log()
-            typ = Unknown.value
+            typ = AnyType()
 
-        if not (issubclass(index.typ, parser.Integer) or index.typ == Value):
-            Error(f"List index must be an {parser.Integer.name}").at(
+        if not Integer().assign(index.typ):
+            Error(f"List index must be an {Integer.name}").at(
                 index.span,
                 msg=f"this is of type {index.typ.name}",
             ).log()
@@ -660,7 +693,7 @@ class Indexing(Binding):
 
 
 class FuncCall(Expression):
-    precedence: int = 5
+    precedence = 5
 
     @classmethod
     def parse(cls: type[Self], fcall: parser.FuncCall, context: Context) -> Self:  # type: ignore[override]
@@ -670,7 +703,7 @@ class FuncCall(Expression):
         signature = context.lookup_function(fcall.name)
         if signature is None:
             Error(f"Cannot find declaration for function {fcall.name}").at(fcall.name.span).log()
-            return cls(fcall.name, args, ref_args, Unknown.value, fcall.span, None)
+            return cls(fcall.name, args, ref_args, AnyType(), fcall.span, None)
 
         def_args = signature.value_args
         if len(args) != len(def_args):
@@ -714,32 +747,26 @@ class FuncCall(Expression):
             e.log()
 
         for arg, def_arg in zip(args, def_args):
-            if arg.typ == Value:
-                continue
-
-            if arg.typ != def_arg.typ.value:
-                Error(f"Expected {def_arg.typ.value.name}, found {arg.typ.name}").at(
+            if not def_arg.typ.assign(arg.typ):
+                Error(f"Expected {def_arg.typ.name}, found {arg.typ.name}").at(
                     arg.span,
                     msg=f"this is of type {arg.typ.name}",
-                ).comment(def_arg.span, f"the argument is defined with a type of {def_arg.typ.value.name}").log()
+                ).comment(def_arg.span, f"the argument is defined with a type of {def_arg.typ.name}").log()
 
         for arg, def_ref_arg in zip(ref_args, def_ref_args):
-            if arg.typ == Value:
-                continue
-
-            if arg.typ != def_ref_arg.typ.value:
-                Error(f"Expected {def_ref_arg.typ.value.name}, found {arg.typ.name}").at(
+            if not def_ref_arg.typ.assign(arg.typ):
+                Error(f"Expected {def_ref_arg.typ.name}, found {arg.typ.name}").at(
                     arg.span,
                     msg=f"this is of type {arg.typ.name}",
                 ).comment(
                     def_ref_arg.span,
-                    f"the argument is defined with a type of {def_ref_arg.typ.value.name}",
+                    f"the argument is defined with a type of {def_ref_arg.typ.name}",
                 ).log()
 
         if signature.ret:  # noqa: SIM108 (mypy is broken with ternary expressions)
-            ret = signature.ret.value
+            ret = signature.ret
         else:
-            ret = parser.Void
+            ret = Void()
 
         return cls(fcall.name, args, ref_args, ret, fcall.span, signature)
 
@@ -754,7 +781,7 @@ class FuncCall(Expression):
         name: SpannedStr,
         args: list[Expression],
         ref_args: list[Binding],
-        ret_type: type[Value[Any]],
+        ret_type: Type,
         span: Span,
         signature: Signature | None,
     ) -> None:
@@ -777,10 +804,7 @@ class Assignement(Statement):
         self.binding = binding
         self.value = value
 
-        if Value in (self.binding.typ, self.value.typ):
-            return
-
-        if self.value.typ != self.binding.typ:
+        if not self.binding.typ.assign(self.value.typ):
             Error(f"Cannot assign a {self.value.typ.name} to a {self.binding.typ.name}").at(
                 self.value.span,
                 msg=f"this is of type {self.value.typ.name}",
@@ -802,8 +826,11 @@ class Print(Statement):
 
         for element in self.elements:
             if not (
-                issubclass(element.typ, (parser.Bool, parser.Integer, parser.Float, parser.Char, parser.String))
-                or element.typ == Value
+                Bool().assign(element.typ)
+                or Integer().assign(element.typ)
+                or Float().assign(element.typ)
+                or Char().assign(element.typ)
+                or String().assign(element.typ)
             ):
                 Error(f"{element.typ.name} is not printable").at(
                     element.span,
@@ -819,8 +846,10 @@ class Input(Statement):
 
         for binding in self.bindings:
             if not (
-                issubclass(binding.typ, (parser.Integer, parser.Float, parser.Char, parser.String))
-                or binding.typ == Value
+                Integer().assign(binding.typ)
+                or Float().assign(binding.typ)
+                or Char().assign(binding.typ)
+                or String().assign(binding.typ)
             ):
                 Error(f"Can't input a variable of type {binding.typ.name}").at(
                     binding.span,
@@ -834,8 +863,8 @@ class Return(Statement):
     def __init__(self: Self, value: Expression, span: Span, context: Context) -> None:
         if context.ret_type is None:
             Error("Cannot return here").hint("You can only return in functions").at(span).log()
-        elif value.typ not in (context.ret_type.value, Value):
-            Error(f"Expected {context.ret_type.value.name} but found {value.typ.name}").at(
+        elif not context.ret_type.assign(value.typ):
+            Error(f"Expected {context.ret_type.name} but found {value.typ.name}").at(
                 value.span,
                 msg=f"this is of type {value.typ.name}",
             ).comment(context.ret_type.span, "the function's return type is declared here").log()
@@ -858,11 +887,11 @@ class Condition(Statement):
         self.if_block = if_block
         self.else_block = else_block
 
-        if not (issubclass(condition.typ, parser.Bool) or condition.typ == Value):
-            Error(f"A condition must be a {parser.Bool.name}").at(
+        if not Bool().assign(condition.typ):
+            Error(f"A condition must be a {Bool.name}").at(
                 condition.span,
                 msg=f"this is of type {condition.typ.name}",
-            ).hint(f"There is no automatic conversion to {parser.Bool.name} in pseudo-code").log()
+            ).hint(f"There is no automatic conversion to {Bool.name} in pseudo-code").log()
 
 
 class Switch(Statement):
@@ -882,7 +911,7 @@ class Switch(Statement):
 
         typ = self.binding.typ
         for lit, _ in self.cases:
-            if not issubclass(lit.typ, typ):
+            if not typ.assign(lit.typ):
                 Error("Every case must be of the same type than the variable").at(
                     lit.span,
                     msg=f"this is of type {lit.typ.name}",
@@ -910,26 +939,26 @@ class ForLoop(Statement):
         self.step = step
         self.body = body
 
-        if not (issubclass(binding.typ, parser.Integer) or binding.typ == Value):
-            Error(f"A for loop variable must be an {parser.Integer.name}").at(
+        if not Integer().assign(binding.typ):
+            Error(f"A for loop variable must be an {Integer.name}").at(
                 binding.span,
                 msg=f"this is of type {binding.typ.name}",
             ).log()
 
-        if not (issubclass(start.typ, parser.Integer) or start.typ == Value):
-            Error(f"The start value of a for-loop must be an {parser.Integer.name}").at(
+        if not Integer().assign(start.typ):
+            Error(f"The start value of a for-loop must be an {Integer.name}").at(
                 start.span,
                 msg=f"this is of type {start.typ.name}",
             ).log()
 
-        if not (issubclass(end.typ, parser.Integer) or end.typ == Value):
-            Error(f"The end value of a for-loop must be an {parser.Integer.name}").at(
+        if not Integer().assign(end.typ):
+            Error(f"The end value of a for-loop must be an {Integer.name}").at(
                 end.span,
                 msg=f"this is of type {end.typ.name}",
             ).log()
 
-        if step and not (issubclass(step.typ, parser.Integer) or step.typ == Value):
-            Error(f"The step value of a for-loop must be an {parser.Integer.name}").at(
+        if step and not Integer().assign(step.typ):
+            Error(f"The step value of a for-loop must be an {Integer.name}").at(
                 step.span,
                 msg=f"this is of type {step.typ.name}",
             ).log()
@@ -943,11 +972,11 @@ class WhileLoop(Statement):
         self.condition = condition
         self.body = body
 
-        if not (issubclass(condition.typ, parser.Bool) or condition.typ == Value):
-            Error(f"A condition must be a {parser.Bool.name}").at(
+        if not Bool().assign(condition.typ):
+            Error(f"A condition must be a {Bool.name}").at(
                 condition.span,
                 msg=f"this is of type {condition.typ.name}",
-            ).hint(f"There is no automatic conversion to {parser.Bool.name} in pseudo-code").log()
+            ).hint(f"There is no automatic conversion to {Bool.name} in pseudo-code").log()
 
 
 class DoWhileLoop(Statement):
@@ -958,11 +987,11 @@ class DoWhileLoop(Statement):
         self.condition = condition
         self.body = body
 
-        if not (issubclass(condition.typ, parser.Bool) or condition.typ == Value):
-            Error(f"A condition must be a {parser.Bool.name}").at(
+        if not Bool().assign(condition.typ):
+            Error(f"A condition must be a {Bool.name}").at(
                 condition.span,
                 msg=f"this is of type {condition.typ.name}",
-            ).hint(f"There is no automatic conversion to {parser.Bool.name} in pseudo-code").log()
+            ).hint(f"There is no automatic conversion to {Bool.name} in pseudo-code").log()
 
 
 def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Generic, TextIO, TypeVar, overload
+from typing import TYPE_CHECKING, TextIO, TypeVar, overload
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -201,9 +201,6 @@ class Span:
     def extract(self: Self) -> str:
         return self.file.content[self.start : self.end]
 
-    def wrap(self: Self, value: T) -> Spanned[T]:
-        return Spanned(value, span=self)
-
     def __add__(self: Self, other: object) -> Self:
         if isinstance(other, Span):
             return type(self)(self.file, min(self.start, other.start), max(self.end, other.end))
@@ -217,20 +214,6 @@ class Span:
 
     def __str__(self: Self) -> str:
         return f"from {self.start} to {self.end}"
-
-
-class Spanned(Generic[T]):
-    __slots__ = ("value", "span")
-
-    value: T
-    span: Span
-
-    def __init__(self: Self, value: T, *, span: Span) -> None:
-        self.value = value
-        self.span = span
-
-    def __repr__(self: Self) -> str:
-        return f"{type(self).__name__}({self.value!r}, span={self.span!r})"
 
 
 class SpannedStr(str):

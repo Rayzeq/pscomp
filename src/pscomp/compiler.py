@@ -3,8 +3,8 @@ from __future__ import annotations
 from itertools import tee, zip_longest
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-from . import parser, typer
-from .parser import Bool, Char, Float, Integer, List, String, Value, Void
+from . import typer
+from .parser import InternalCompilerError, Value
 from .typer import (
     Add,
     And,
@@ -46,6 +46,7 @@ from .typer import (
     Variable,
     WhileLoop,
 )
+from .types import Bool, Char, Float, Integer, List, String, Type, Void
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -66,15 +67,8 @@ def pairwise(iterable: Iterable[T]) -> Iterable[tuple[T, T | None]]:
     return zip_longest(a, b)
 
 
-def compile_value(value: Value[Any]) -> str:
-    if isinstance(value, (Bool, Integer, Float, Char, String)):
-        return repr(value.value)
-    elif isinstance(value, List):
-        msg = f"[COMPILER BUG] You're a liar, list literals don't exist ({value})"
-        raise TypeError(msg)
-    else:
-        msg = f"[COMPILER BUG] Cannot compile value {value}"
-        raise TypeError(msg)
+def compile_value(value: Value) -> str:
+    return repr(value.value)
 
 
 def precede(expr1: Expression, expr2: Expression) -> str:
@@ -90,8 +84,8 @@ def compile_binding(binding: Binding) -> str:
     elif isinstance(binding, Indexing):
         return f"{compile_binding(binding.base)}[{compile_expr(binding.index)}]"
     else:
-        msg = f"[COMPILER BUG] Missing support for binding: {binding}"
-        raise TypeError(msg)
+        msg = f"Cannot compile binding: {binding}"
+        raise InternalCompilerError(msg)
 
 
 def compile_funcall(funcall: FuncCall) -> str:
@@ -123,7 +117,7 @@ def compile_expr(expr: Expression) -> str:
     elif isinstance(expr, Multiply):
         return f"{precede(expr, expr.left)} * {precede(expr, expr.right)}"
     elif isinstance(expr, Divide):
-        if issubclass(expr.typ, Integer):
+        if isinstance(expr.typ, Integer):
             return f"{precede(expr, expr.left)} // {precede(expr, expr.right)}"
         else:
             return f"{precede(expr, expr.left)} / {precede(expr, expr.right)}"
@@ -154,12 +148,12 @@ def compile_expr(expr: Expression) -> str:
     elif isinstance(expr, FuncCall):
         return compile_funcall(expr)
     else:
-        msg = f"[COMPILER BUG] Missing support for expression: {expr}"
-        raise TypeError(msg)
+        msg = f"Cannot compile expression: {expr}"
+        raise InternalCompilerError(msg)
 
 
 def compile_input(binding: Binding) -> str:
-    if (cast := CASTMAP.get(binding.typ)) is not None:
+    if (cast := CASTMAP.get(type(binding.typ))) is not None:
         return f"{compile_binding(binding)} = {cast.__name__}(input())"
     else:
         return f"{compile_binding(binding)} = input()"
@@ -205,8 +199,8 @@ while True:
     elif isinstance(statement, Return):
         return f"return {compile_expr(statement.value)}"
     else:
-        msg = f"[COMPILER BUG] Missing support for statement: {statement}"
-        raise TypeError(msg)
+        msg = f"Cannot compile statement: {statement}"
+        raise InternalCompilerError(msg)
 
 
 def compile_block(statments: list[Statement], ret_values: Sequence[str] | None = None) -> str:
@@ -225,7 +219,7 @@ def compile_block(statments: list[Statement], ret_values: Sequence[str] | None =
             skip = True
 
             bd = compile_binding(next_stmt.bindings[0])
-            cast = CASTMAP.get(next_stmt.bindings[0].typ)
+            cast = CASTMAP.get(type(next_stmt.bindings[0].typ))
             msg = make_fstring(statement.elements)
             if cast is None:
                 result.append(f"{bd} = input({msg})")
@@ -240,9 +234,9 @@ def compile_block(statments: list[Statement], ret_values: Sequence[str] | None =
     return "\n".join(result)
 
 
-def compile_type(typ: type[Value[Any]]) -> str:
+def compile_type(typ: Type) -> str:
     TYPEMAP = {
-        Value: "Any",
+        Any: "Any",
         Void: "None",
         Bool: "bool",
         Integer: "int",
@@ -251,28 +245,28 @@ def compile_type(typ: type[Value[Any]]) -> str:
         String: "str",
     }
 
-    if issubclass(typ, List):
+    if isinstance(typ, List):
         return f"list[{compile_type(typ.subtype)}]"
     else:
-        return TYPEMAP[typ]
+        return TYPEMAP[type(typ)]
 
 
 def compile_argdef(arg: Argument) -> str:
-    return f"{arg.name}: {compile_type(arg.typ.value)}"
+    return f"{arg.name}: {compile_type(arg.typ)}"
 
 
 def compile_typedef(typedef: TypeDef) -> str:
-    def list_init(typ: type[Value[Any]]) -> str:
-        if issubclass(typ, parser.List):
-            return f"[{list_init(typ.subtype)} for _ in range({compile_expr(typ.length)})]"  # type: ignore[arg-type] # go check TypeDef._check_indexes
+    def list_init(typ: Type) -> str:
+        if isinstance(typ, List):
+            return f"[{list_init(typ.subtype)} for _ in range({compile_expr(typ.length)})]"  # go check TypeDef._check_indexes
         else:
             return "Uninit"
 
-    result = f"{typedef.name}: {compile_type(typedef.typ.value)}"
+    result = f"{typedef.name}: {compile_type(typedef.typ)}"
     if typedef.default is not None:
         result += f" = {compile_expr(typedef.default)}"
-    elif issubclass(typedef.typ.value, parser.List):
-        result += f" = {list_init(typedef.typ.value)}"
+    elif isinstance(typedef.typ, List):
+        result += f" = {list_init(typedef.typ)}"
     else:
         result += " = Uninit"
     return result
@@ -284,9 +278,9 @@ def compile_typedefs(typedefs: list[TypeDef]) -> list[str]:
 
 def compile_function(function: Function) -> str:
     if function.signature.ret is not None:
-        ret = compile_type(function.signature.ret.value)
+        ret = compile_type(function.signature.ret)
     elif refs := function.signature.ref_args:
-        ret = f"tuple[{', '.join([compile_type(r.typ.value) for r in refs])}]"
+        ret = f"tuple[{', '.join([compile_type(r.typ) for r in refs])}]"
     else:
         ret = "None"
 
@@ -319,8 +313,8 @@ def compile_toplevel(toplevel: Program | Function) -> str:
     elif isinstance(toplevel, Function):
         return compile_function(toplevel)
     else:
-        msg = f"[COMPILER BUG] Missing support for {toplevel}"
-        raise TypeError(msg)
+        msg = f"Cannot compile toplevel: {toplevel}"
+        raise InternalCompilerError(msg)
 
 
 @overload
@@ -350,7 +344,7 @@ def make_fstring(elements: list[Expression]) -> str:
     result = []
     needs_f = False
     for element in elements:
-        if isinstance(element, Literal) and isinstance(element.value, (String, Char)):
+        if isinstance(element, Literal) and isinstance(element.value.value, str):
             result.append(element.value.value.replace("{", "{{").replace("}", "}}"))
         else:
             needs_f = True
@@ -367,7 +361,7 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
     joint = "\n\n\n"
 
     constants = "\n".join(
-        f"{name}: {compile_type(typ.value)} = {compile_expr(value)}" for name, (typ, value) in context.constants.items()
+        f"{name}: {compile_type(typ)} = {compile_expr(value)}" for name, (typ, value) in context.constants.items()
     )
 
     imports = "\n".join(
