@@ -107,11 +107,19 @@ class BuiltinSignature(Signature):
 from .builtins import Unknown, builtins  # noqa: E402 - prevent circular import
 
 
+@dataclass
+class Variable:
+    name: SpannedStr
+    typ: Type
+    value: Expression | None
+    is_const: bool
+
+
 class Context:
     python_imports: dict[str, set[str]]
-    constants: dict[SpannedStr, tuple[Type, Expression]]
+    constants: dict[SpannedStr, Variable]
     functions: dict[str, Signature]
-    variables: dict[SpannedStr, tuple[Type, Expression | None]]
+    variables: dict[SpannedStr, Variable]
     ret_type: Type | None
 
     def __init__(self: Self) -> None:
@@ -132,10 +140,10 @@ class Context:
                 value.span,
                 msg=f"this of type {value.typ.name}",
             ).comment(typ.span, "the variable's type is set here").log()
-        self.constants[name] = (typ, value)
-        self.add_variable(name, typ, value)
+        self.constants[name] = Variable(name, typ, value, is_const=True)
+        self.add_variable(name, typ, value, is_const=True)
 
-    def lookup_constant(self: Self, name: str) -> tuple[Type, Expression] | None:
+    def lookup_constant(self: Self, name: str) -> Variable | None:
         if name in self.constants:
             return self.constants[cast(SpannedStr, name)]
 
@@ -163,7 +171,14 @@ class Context:
 
         return None
 
-    def add_variable(self: Self, name: SpannedStr, typ: Type, value: Expression | None) -> None:
+    def add_variable(
+        self: Self,
+        name: SpannedStr,
+        typ: Type,
+        value: Expression | None,
+        *,
+        is_const: bool = False,
+    ) -> None:
         if name in self.variables:
             Warn(f"A variable named {name} is already defined, latest definition will be used").at(
                 name.span,
@@ -174,9 +189,9 @@ class Context:
                 value.span,
                 msg=f"this of type {value.typ.name}",
             ).comment(typ.span, "the variable's type is set here").log()
-        self.variables[name] = (typ, value)
+        self.variables[name] = Variable(name, typ, value, is_const)
 
-    def lookup_variable(self: Self, name: str) -> tuple[Type, Expression | None] | None:
+    def lookup_variable(self: Self, name: str) -> Variable | None:
         if name in self.variables:
             return self.variables[cast(SpannedStr, name)]
 
@@ -679,7 +694,7 @@ class Binding(Expression):
     @classmethod
     def parse(cls: type[Self], binding: parser.Binding, context: Context, *, constexpr: bool = False) -> Binding:  # type: ignore[override]
         if isinstance(binding, parser.Variable):
-            return Variable(binding.name, context, constexpr=constexpr)
+            return VariableBinding(binding.name, context, constexpr=constexpr)
         elif isinstance(binding, parser.Indexing):
             return Indexing(
                 Binding.parse(binding.sub, context, constexpr=constexpr),
@@ -690,8 +705,10 @@ class Binding(Expression):
             msg = f"Cannot parse binding: {binding}"
             raise InternalCompilerError(msg)
 
+    is_const: bool
 
-class Variable(Binding):
+
+class VariableBinding(Binding):
     name: SpannedStr
     value: Expression | None = None
 
@@ -699,6 +716,7 @@ class Variable(Binding):
         typ: Type = Unknown
 
         if constexpr:
+            self.is_const = True
             const = context.lookup_constant(name)
             if const is None:
                 e = Error(f"Cannot find declaration for constant {name}").at(name.span)
@@ -706,14 +724,16 @@ class Variable(Binding):
                     e.hint("a variable with this name exist, but only constants are allowed in this context")
                 e.log()
             else:
-                typ = const[0]
-                self.value = const[1]
+                typ = const.typ
+                self.value = const.value
         else:
+            self.is_const = False
             var = context.lookup_variable(name)
             if var is None:
                 Error(f"Cannot find declaration for variable {name}").at(name.span).log()
             else:
-                typ = var[0]
+                typ = var.typ
+                self.is_const = var.is_const
 
         super().__init__(typ, name.span)
         self.name = name
@@ -722,6 +742,9 @@ class Variable(Binding):
         if self.value is None:
             return UnknownValue()
         return self.value.compute()
+
+    def __repr__(self: Self) -> str:
+        return f"Variable({self.name})"
 
 
 class Indexing(Binding):
@@ -751,6 +774,7 @@ class Indexing(Binding):
         self.base = base
         self.index = index
         self.brackets_span = brackets_span
+        self.is_const = base.is_const
 
 
 class FuncCall(Expression):
@@ -870,6 +894,9 @@ class Assignement(Statement):
                 self.value.span,
                 msg=f"this is of type {self.value.typ.name}",
             ).comment(self.binding.span, f"the variable is of type {self.binding.typ.name}").log()
+
+        if self.binding.is_const:
+            Error("Cannot modify a constant").at(self.binding.span + self.value.span).log()
 
 
 class ExpressionStmt(Statement):

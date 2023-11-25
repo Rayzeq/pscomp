@@ -42,7 +42,7 @@ from .typer import (
     Substract,
     Switch,
     TypeDef,
-    Variable,
+    VariableBinding,
     WhileLoop,
 )
 from .types import Bool, Char, Float, Integer, List, String, Type, Void
@@ -80,7 +80,7 @@ def precede(expr1: Expression, expr2: Expression) -> str:
 
 
 def compile_binding(binding: Binding) -> str:
-    if isinstance(binding, Variable):
+    if isinstance(binding, VariableBinding):
         return binding.name
     elif isinstance(binding, Indexing):
         return f"{compile_binding(binding.base)}[{compile_expr(binding.index)}]"
@@ -362,7 +362,7 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
     joint = "\n\n\n"
 
     constants = "\n".join(
-        f"{name}: {compile_type(typ)} = {compile_expr(value)}" for name, (typ, value) in context.constants.items()
+        f"{name}: {compile_type(const.typ)} = {compile_expr(const.value)}" for name, const in context.constants.items()
     )
 
     imports = "\n".join(
