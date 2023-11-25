@@ -135,11 +135,11 @@ class Context:
         self.constants[name] = (typ, value)
         self.add_variable(name, typ, value)
 
-    def lookup_constant(self: Self, name: str) -> tuple[Type, Expression | None]:
+    def lookup_constant(self: Self, name: str) -> tuple[Type, Expression] | None:
         if name in self.constants:
             return self.constants[cast(SpannedStr, name)]
 
-        return (Unknown, None)
+        return None
 
     def add_function(self: Self, sig: Signature) -> None:
         if sig.name in self.functions:
@@ -176,11 +176,11 @@ class Context:
             ).comment(typ.span, "the variable's type is set here").log()
         self.variables[name] = (typ, value)
 
-    def lookup_variable(self: Self, name: str) -> tuple[Type, Expression | None]:
+    def lookup_variable(self: Self, name: str) -> tuple[Type, Expression | None] | None:
         if name in self.variables:
             return self.variables[cast(SpannedStr, name)]
 
-        return (Unknown, None)
+        return None
 
     def fork(self: Self) -> Self:
         new = type(self)()
@@ -696,18 +696,24 @@ class Variable(Binding):
     value: Expression | None = None
 
     def __init__(self: Self, name: SpannedStr, context: Context, *, constexpr: bool = False) -> None:
+        typ: Type = Unknown
+
         if constexpr:
-            typ, value = context.lookup_constant(name)
-            self.value = value
-            if isinstance(typ, AnyType):
+            const = context.lookup_constant(name)
+            if const is None:
                 e = Error(f"Cannot find declaration for constant {name}").at(name.span)
-                if not isinstance(context.lookup_variable(name)[0], AnyType):
+                if context.lookup_variable(name) is not None:
                     e.hint("a variable with this name exist, but only constants are allowed in this context")
                 e.log()
+            else:
+                typ = const[0]
+                self.value = const[1]
         else:
-            typ = context.lookup_variable(name)[0]
-            if isinstance(typ, AnyType):
+            var = context.lookup_variable(name)
+            if var is None:
                 Error(f"Cannot find declaration for variable {name}").at(name.span).log()
+            else:
+                typ = var[0]
 
         super().__init__(typ, name.span)
         self.name = name
