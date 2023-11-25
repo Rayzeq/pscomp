@@ -211,6 +211,11 @@ class TypeDef:
             length = Expression.parse(typ.length, context, constexpr=True)
             # for the compiler
             typ.length = length
+            if not Integer().assign(length.typ):
+                Error(f"List length must be an integer, not {length.typ.name}").at(
+                    length.span,
+                    msg=f"this is of type {length.typ.name}",
+                ).log()
             cls._check_indexes(typ.subtype, context)
 
 

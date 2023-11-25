@@ -404,15 +404,18 @@ class List(Type):
             msg = f"Unsupported binding: {binding}"
             raise InternalCompilerError(msg)
 
-    name = "liste"
     subtype: Type
     length: TAny
+
+    @property
+    def name(self: Self) -> str:
+        lenght = self.length.compute()
+        return f"liste[{self.subtype.name}, {lenght.value if isinstance(lenght.typ, Integer) else '???'}]"
 
     def __init__(self: Self, subtype: Type, length: TAny, span: Span | None = None) -> None:
         super().__init__(span)
         self.subtype = subtype
         self.length = length
-        self.name = f"liste[{subtype.name}]"
 
     def pos(self: Self, /) -> Type | None:
         return None
@@ -442,4 +445,13 @@ class List(Type):
     def __eq__(self: Self, other: object) -> bool:
         if not isinstance(other, List):
             return False
-        return self.subtype.assign(other.subtype) is not None
+
+        self_len = self.length.compute()
+        if not isinstance(self_len.typ, Integer):
+            return True
+
+        other_len = other.length.compute()
+        if not isinstance(other_len.typ, Integer):
+            return True
+
+        return self.subtype.assign(other.subtype) is not None and self_len.value == other_len.value
