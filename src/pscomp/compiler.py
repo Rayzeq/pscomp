@@ -287,20 +287,19 @@ def compile_function(function: Function) -> str:
 
     ret_values = [r.name for r in function.signature.ref_args]
 
+    typedefs = indent(4, compile_typedefs(function.types)) + "\n\n    " if function.types else ""
+
     return f"""
 def {function.signature.name}({", ".join(map(compile_argdef, function.signature.args))}) -> {ret}:
-    {indent(4, compile_typedefs(function.types))}
-
-    {indent(4, compile_block(function.body, ret_values))}
+    {typedefs}{indent(4, compile_block(function.body, ret_values))}
 """.strip()
 
 
 def compile_program(program: Program) -> str:
+    typedefs = indent(4, compile_typedefs(program.types)) + "\n\n    " if program.types else ""
     return f"""
 def {program.name}() -> None:
-    {indent(4, compile_typedefs(program.types))}
-
-    {indent(4, compile_block(program.body))}
+    {typedefs}{indent(4, compile_block(program.body))}
 
 
 if __name__ == "__main__":
