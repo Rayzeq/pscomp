@@ -370,7 +370,7 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
 
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
-{linesep + (linesep * 2).join(filter(bool, (imports, constants))) + linesep}
+{linesep + (linesep * 2).join(filter(bool, (imports, constants))) + linesep * 2}
 # ================ Compiler generated code, please don't edit ================
 class UninitMeta(type):
     def __instancecheck__(cls: UninitMeta, instance: object) -> bool:
