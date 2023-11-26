@@ -147,6 +147,10 @@ class Signature:
 class BuiltinSignature(Signature):
     source: str
 
+    @property
+    def python_name(self: Self) -> str:
+        return self.source.rsplit(".", 1)[-1]
+
     def __init__(
         self: Self,
         name: SpannedStr,
@@ -158,12 +162,45 @@ class BuiltinSignature(Signature):
         super().__init__(name, args, ret)
         self.source = source
 
-    @property
-    def python_name(self: Self) -> str:
-        return self.source.rsplit(".", 1)[-1]
+
+class Cast(Signature):
+    source: str
+    python_name: str
+    sources: list[Argument]
+
+    def __init__(self: Self, name: SpannedStr, source: Argument, ret: Type, python_name: str) -> None:
+        self.name = name
+        self.args = self.sources = [source]
+        self.ret = ret
+        self.source = self.python_name = python_name
+
+    def overload(self: Self, source: Argument) -> None:
+        self.sources.append(source)
+
+    def check(self: Self, name: SpannedStr, args: list[Expression], references: list[Binding]) -> None:
+        if len(args) != 1:
+            e = Error(f"Function {name} takes 1 arguments but {len(args)} were given").at(name.span)
+
+            if args:
+                e.comment(reduce((lambda x, y: x + y), (x.span for x in args)), f"there are {len(args)} arguments here")
+
+            e.comment(self.sources[0].span, "the function takes 1 arguments")
+            e.log()
+        arg = args[0]
+
+        if not any(def_arg.typ.assign(arg.typ) for def_arg in self.sources):
+            e = Error(f"Expected one of {', '.join(arg.typ.name for arg in self.sources)}, found {arg.typ.name}").at(
+                arg.span,
+                msg=f"this is of type {arg.typ.name}",
+            )
+
+            for def_arg in self.sources:
+                e.comment(def_arg.span, f"the argument is defined with a type of {def_arg.typ.name}")
+
+            e.log()
 
 
-from .builtins import Unknown, builtins  # noqa: E402 - prevent circular import
+from .builtins import Unknown, builtins  # noqa: E402 # prevent circular import
 
 
 @dataclass

@@ -4,17 +4,17 @@ from typing import cast
 
 from . import lexer
 from .source import SourceFile
-from .typer import Argument, BuiltinSignature
+from .typer import Argument, BuiltinSignature, Cast
 from .types import Any as AnyType
-from .types import Float, Integer, Type
+from .types import Bool, Char, Float, Integer, String, Type
 
 
 def _i(token: lexer.Token) -> lexer.Identifier:
     return cast(lexer.Identifier, token)
 
 
-def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSignature]:
-    result: dict[str, BuiltinSignature] = {}
+def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSignature | Cast]:
+    result: dict[str, BuiltinSignature | Cast] = {}
     current_source = ""
 
     while tokens:
@@ -43,7 +43,16 @@ def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSign
         ret_typ = _i(tokens.pop(0))
 
         source = ".".join(filter(bool, [current_source, name]))
-        result[name] = BuiltinSignature(name, args, _TYPES[ret_typ.name](ret_typ.span), source=source)
+
+        if sig := result.get(name):
+            assert isinstance(sig, Cast)
+            assert len(args) == 1
+            sig.overload(args[0])
+        elif current_source == "cast":
+            assert len(args) == 1
+            result[name] = Cast(name, args[0], _TYPES[ret_typ.name](ret_typ.span), _TYPE_NAMES[name])
+        else:
+            result[name] = BuiltinSignature(name, args, _TYPES[ret_typ.name](ret_typ.span), source=source)
 
     return result
 
@@ -52,9 +61,20 @@ BuiltinSource = SourceFile(
     """
 Unknown
 
-source: ""
+source: "cast"
+fonction entier(valeur: booleen) retourne entier
 fonction entier(valeur: reel) retourne entier
+fonction entier(valeur: car) retourne entier
+fonction entier(valeur: chaine) retourne entier
+
+fonction reel(valeur: booleen) retourne reel
 fonction reel(valeur: entier) retourne reel
+fonction reel(valeur: chaine) retourne reel
+
+fonction chaine(valeur: booleen) retourne chaine
+fonction chaine(valeur: entier) retourne chaine
+fonction chaine(valeur: reel) retourne chaine
+fonction chaine(valeur: car) retourne chaine
 
 source: "math"
 fonction sqrt(number: reel) retourne reel
@@ -71,8 +91,18 @@ fonction random() retourne reel
 )
 
 _TYPES: dict[str, type[Type]] = {
+    "booleen": Bool,
     "entier": Integer,
     "reel": Float,
+    "car": Char,
+    "chaine": String,
+}
+_TYPE_NAMES: dict[str, str] = {
+    "booleen": "bool",
+    "entier": "int",
+    "reel": "float",
+    "car": "str",
+    "chaine": "str",
 }
 _tokens = lexer.lexer(BuiltinSource.sections[0])
 

@@ -11,6 +11,7 @@ from .typer import (
     Assignement,
     Binding,
     BuiltinSignature,
+    Cast,
     Condition,
     Divide,
     DoWhileLoop,
@@ -90,7 +91,7 @@ def compile_binding(binding: Binding) -> str:
 
 
 def compile_funcall(funcall: FuncCall) -> str:
-    if funcall.signature and isinstance(funcall.signature, BuiltinSignature):
+    if funcall.signature and isinstance(funcall.signature, (BuiltinSignature, Cast)):
         name = funcall.signature.python_name
     else:
         name = funcall.name
