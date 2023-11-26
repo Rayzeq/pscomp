@@ -1316,6 +1316,12 @@ def _parse(stream: TokenStream) -> tuple[list[Node[Any]], list[TypeDef], list[St
     structures = []
     for definition in typdefs:
         if isinstance(definition, Structure):
+            if "_" in definition.name or definition.name[0].islower() or definition.name.isupper():
+                Warn("Structures should be PascalCase").at(definition.name.span).replacement(
+                    (definition.name.span, definition.name.upper()),
+                    msg="Make the constant uppercase",
+                ).log()
+
             structures.append(definition)
         else:  # it's a constant
             if not definition.name.isupper():
