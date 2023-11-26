@@ -63,6 +63,14 @@ class Signature:
     args: list[Argument]
     ret: Type | None
 
+    @property
+    def value_args(self: Self) -> list[Argument]:
+        return [arg for arg in self.args if not isinstance(arg, Reference)]
+
+    @property
+    def ref_args(self: Self) -> list[Reference]:
+        return [arg for arg in self.args if isinstance(arg, Reference)]
+
     def __init__(
         self: Self,
         name: SpannedStr,
@@ -73,13 +81,64 @@ class Signature:
         self.args = args
         self.ret = ret
 
-    @property
-    def value_args(self: Self) -> list[Argument]:
-        return [arg for arg in self.args if not isinstance(arg, Reference)]
+    def check(self: Self, name: SpannedStr, args: list[Expression], references: list[Binding]) -> None:
+        def_args = self.value_args
+        if len(args) != len(def_args):
+            e = Error(f"Function {name} takes {len(def_args)} arguments but {len(args)} were given").at(
+                name.span,
+            )
 
-    @property
-    def ref_args(self: Self) -> list[Reference]:
-        return [arg for arg in self.args if isinstance(arg, Reference)]
+            if args:
+                e.comment(reduce((lambda x, y: x + y), (x.span for x in args)), f"there are {len(args)} arguments here")
+
+            if def_args:
+                e.comment(
+                    reduce((lambda x, y: x + y), (x.span for x in def_args)),
+                    f"the function takes {len(def_args)} arguments",
+                )
+            else:
+                e.comment(self.name.span, "the function is defined here")
+
+            e.log()
+
+        def_ref_args = self.ref_args
+        if len(references) != len(def_ref_args):
+            e = Error(
+                f"Function {name} takes {len(def_ref_args)} arguments by reference but {len(references)} were given",
+            ).at(name.span)
+
+            if references:
+                e.comment(
+                    reduce((lambda x, y: x + y), (x.span for x in references)),
+                    f"there are {len(references)} arguments here",
+                )
+
+            if def_ref_args:
+                e.comment(
+                    reduce((lambda x, y: x + y), (x.span for x in def_ref_args)),
+                    f"the function takes {len(def_ref_args)} arguments",
+                )
+            else:
+                e.comment(self.name.span, "the function is defined here")
+
+            e.log()
+
+        for arg, def_arg in zip(args, def_args):
+            if not def_arg.typ.assign(arg.typ):
+                Error(f"Expected {def_arg.typ.name}, found {arg.typ.name}").at(
+                    arg.span,
+                    msg=f"this is of type {arg.typ.name}",
+                ).comment(def_arg.span, f"the argument is defined with a type of {def_arg.typ.name}").log()
+
+        for arg, def_ref_arg in zip(references, def_ref_args):
+            if not def_ref_arg.typ.assign(arg.typ):
+                Error(f"Expected {def_ref_arg.typ.name}, found {arg.typ.name}").at(
+                    arg.span,
+                    msg=f"this is of type {arg.typ.name}",
+                ).comment(
+                    def_ref_arg.span,
+                    f"the argument is defined with a type of {def_ref_arg.typ.name}",
+                ).log()
 
     def __str__(self: Self) -> str:
         return f"{self.name}({', '.join(str(arg) for arg in self.args)}){(' -> ' + self.ret.name) if self.ret else ''}"
@@ -790,63 +849,7 @@ class FuncCall(Expression):
             Error(f"Cannot find declaration for function {fcall.name}").at(fcall.name.span).log()
             return cls(fcall.name, args, ref_args, AnyType(), fcall.span, None)
 
-        def_args = signature.value_args
-        if len(args) != len(def_args):
-            e = Error(f"Function {fcall.name} takes {len(def_args)} arguments but {len(args)} were given").at(
-                fcall.name.span,
-            )
-
-            if args:
-                e.comment(reduce((lambda x, y: x + y), (x.span for x in args)), f"there are {len(args)} arguments here")
-
-            if def_args:
-                e.comment(
-                    reduce((lambda x, y: x + y), (x.span for x in def_args)),
-                    f"the function takes {len(def_args)} arguments",
-                )
-            else:
-                e.comment(signature.name.span, "the function is defined here")
-
-            e.log()
-
-        def_ref_args = signature.ref_args
-        if len(ref_args) != len(def_ref_args):
-            e = Error(
-                f"Function {fcall.name} takes {len(def_ref_args)} arguments by reference but {len(ref_args)} were given",
-            ).at(fcall.name.span)
-
-            if ref_args:
-                e.comment(
-                    reduce((lambda x, y: x + y), (x.span for x in ref_args)),
-                    f"there are {len(ref_args)} arguments here",
-                )
-
-            if def_ref_args:
-                e.comment(
-                    reduce((lambda x, y: x + y), (x.span for x in def_ref_args)),
-                    f"the function takes {len(def_ref_args)} arguments",
-                )
-            else:
-                e.comment(signature.name.span, "the function is defined here")
-
-            e.log()
-
-        for arg, def_arg in zip(args, def_args):
-            if not def_arg.typ.assign(arg.typ):
-                Error(f"Expected {def_arg.typ.name}, found {arg.typ.name}").at(
-                    arg.span,
-                    msg=f"this is of type {arg.typ.name}",
-                ).comment(def_arg.span, f"the argument is defined with a type of {def_arg.typ.name}").log()
-
-        for arg, def_ref_arg in zip(ref_args, def_ref_args):
-            if not def_ref_arg.typ.assign(arg.typ):
-                Error(f"Expected {def_ref_arg.typ.name}, found {arg.typ.name}").at(
-                    arg.span,
-                    msg=f"this is of type {arg.typ.name}",
-                ).comment(
-                    def_ref_arg.span,
-                    f"the argument is defined with a type of {def_ref_arg.typ.name}",
-                ).log()
+        signature.check(fcall.name, args, ref_args)
 
         if signature.ret:  # noqa: SIM108 (mypy is broken with ternary expressions)
             ret = signature.ret
