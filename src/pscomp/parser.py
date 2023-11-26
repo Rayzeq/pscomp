@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Sequence, TypeAlias, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Mapping, Sequence, TypeAlias, TypeVar, cast, overload
 
 from . import lexer
 from .errors import InternalCompilerError
@@ -981,6 +981,49 @@ class Operator(NoParse):
         return f"{type(self).__name__}({self.op.value})"
 
 
+class Structure:
+    @classmethod
+    def _parse(cls: type[Self], stream: TokenStream) -> Self:
+        def parse_list(stream: TokenStream) -> list[Binding]:
+            bindings = []
+
+            while stream:
+                bindings.append(Binding.parse(stream))
+                if isinstance(stream.try_peek(), lexer.Comma):
+                    stream.pop()
+                else:
+                    break
+
+            return bindings
+
+        name = assert_token(stream.try_pop(), lexer.Identifier).name
+        assert_token(stream.try_pop(), lexer.Operator(lexer.OperatorType.EQ))
+        assert_token(stream.try_pop(), lexer.LBrace)
+
+        fields = {}
+        while not isinstance(stream.try_peek(), lexer.RBrace):
+            names = parse_list(stream)
+            assert_token(stream.try_pop(), lexer.Colon)
+
+            typ_tok = assert_token(stream.try_pop(), tuple(TYPES.keys()))
+            typ_ = TYPES[typ_tok](typ_tok.span)
+
+            for binding in names:
+                typ = List.from_(binding, typ_)
+                fields[binding.get_name()] = TypeDef(binding.get_name(), typ, None)
+
+        assert_token(stream.try_pop(), lexer.RBrace)
+
+        return cls(name, fields)  # type: ignore[arg-type] # apparently subclasses in dict keys are not ok
+
+    name: SpannedStr
+    fields: Mapping[str, TypeDef]
+
+    def __init__(self: Self, name: SpannedStr, fields: Mapping[str, TypeDef]) -> None:
+        self.name = name
+        self.fields = fields
+
+
 @dataclass
 class TypeDef:
     name: SpannedStr
@@ -1073,11 +1116,34 @@ class Block:
         else:
             assert_token(stream.try_pop(), starter, crash=False)
 
+    @overload
     @classmethod
-    def _parse_typedefs(cls: type[Self], stream: TokenStream) -> list[TypeDef]:
+    def _parse_typedefs(cls: type[Self], stream: TokenStream, *, allow_structs: Literal[False]) -> list[TypeDef]:
+        ...
+
+    @overload
+    @classmethod
+    def _parse_typedefs(
+        cls: type[Self],
+        stream: TokenStream,
+        *,
+        allow_structs: Literal[True],
+    ) -> list[TypeDef | Structure]:
+        ...
+
+    @classmethod  # type: ignore[misc] # apparently my overloads are wrong
+    def _parse_typedefs(
+        cls: type[Self],
+        stream: TokenStream,
+        *,
+        allow_structs: bool = False,
+    ) -> list[TypeDef | Structure]:
         def check_line(stream: TokenStream) -> bool:
             if not stream:
                 return False
+
+            if allow_structs and stream.peek() == lexer.Identifier("type"):
+                return True
 
             line = stream.peek().span.start.line
             i = 0
@@ -1102,9 +1168,14 @@ class Block:
             return bindings
 
         stream.pop()
-        typedefs = []
+        typedefs: list[TypeDef | Structure] = []
 
         while check_line(stream):
+            if allow_structs and stream.peek() == lexer.Identifier("type"):
+                stream.pop()
+                typedefs.append(Structure._parse(stream))
+                continue
+
             bindings = parse_list(stream)
             assert_token(stream.try_pop(), lexer.Colon)
 
@@ -1238,27 +1309,31 @@ def check_token(token: Token[Any] | None, expected: Sequence[T | type[T]]) -> bo
     return False
 
 
-def _parse(stream: TokenStream) -> tuple[list[Node[Any]], list[TypeDef]]:
-    if stream.try_peek() == KEYWORDS.avec:
-        typdefs = Block._parse_typedefs(stream)
-    else:
-        typdefs = []
+def _parse(stream: TokenStream) -> tuple[list[Node[Any]], list[TypeDef], list[Structure]]:
+    typdefs = Block._parse_typedefs(stream, allow_structs=True) if stream.try_peek() == KEYWORDS.avec else []
 
-    for constant in typdefs:
-        if not constant.name.isupper():
-            Warn("Constant should be UPPER_CASE").at(constant.name.span).replacement(
-                (constant.name.span, constant.name.upper()),
-                msg="Make the constant uppercase",
-            ).log()
+    constants = []
+    structures = []
+    for definition in typdefs:
+        if isinstance(definition, Structure):
+            structures.append(definition)
+        else:  # it's a constant
+            if not definition.name.isupper():
+                Warn("Constant should be UPPER_CASE").at(definition.name.span).replacement(
+                    (definition.name.span, definition.name.upper()),
+                    msg="Make the constant uppercase",
+                ).log()
 
-        if constant.default is None:
-            Error("Constants must have a value").at(constant.name.span).log()
-            continue
+            if definition.default is None:
+                Error("Constants must have a value").at(definition.name.span).log()
+                continue
 
-    return Block.parse(stream), typdefs
+            constants.append(definition)
+
+    return Block.parse(stream), constants, structures
 
 
-def parse(tokens: list[Token[Any]]) -> tuple[list[Node[Any]], list[TypeDef]]:
+def parse(tokens: list[Token[Any]]) -> tuple[list[Node[Any]], list[TypeDef], list[Structure]]:
     stream = TokenStream(tokens)
 
     try:

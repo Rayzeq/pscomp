@@ -13,8 +13,8 @@ from .source import FileSection, SourceFile, UnsupportedFileTypeError
 
 def compile_section(section: FileSection) -> str:
     tokens = lexer.lexer(section)
-    asts, constants = parser.parse(tokens)
-    typed_asts, context = typer.parse(asts, constants)
+    asts, constants, structures = parser.parse(tokens)
+    typed_asts, context = typer.parse(asts, constants, structures)
     return compile(typed_asts, context)
 
 

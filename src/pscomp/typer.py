@@ -1189,6 +1189,7 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
 def parse(
     nodes: Iterable[Node[Any]],
     constants: list[parser.TypeDef],
+    structures: list[parser.Structure],
 ) -> tuple[list[Program | Function], Context]:
     context = Context()
 
