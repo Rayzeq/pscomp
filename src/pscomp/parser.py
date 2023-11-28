@@ -11,6 +11,7 @@ from .logger import Error, Warn
 from .source import Position, Span, SpannedStr
 from .types import Any as AnyType
 from .types import Bool, Char, Float, Integer, List, String, Type
+from .types import Structure as StructType
 
 if TYPE_CHECKING:
     from typing_extensions import Never, Self
@@ -74,9 +75,9 @@ class Node(ABC, Generic[N]):
     span: Span
 
     @classmethod
-    def parse(cls: type[Self], stream: TokenStream) -> N:
+    def parse(cls: type[Self], stream: TokenStream, **kwargs: Any) -> N:
         start = stream.next_pos
-        self = cls._parse(stream)
+        self = cls._parse(stream, **kwargs)
         self.span = Span.from_(start, stream.last_pos)
 
         return self
@@ -381,6 +382,13 @@ TYPES: dict[lexer.Identifier, type[Type]] = {
 }
 
 
+def parse_type(token: Token[Any] | None) -> Type:
+    token_: lexer.Identifier = assert_token(token, (*TYPES.keys(), lexer.Identifier))  # type: ignore[arg-type] # yeah mypy is really dumb
+    typ = TYPES[token_](token_.span) if token_ in TYPES else StructType(token_.name, token_.span)
+
+    return typ
+
+
 class Program(Node["Program"]):
     @classmethod
     def _parse(cls: type[Self], stream: TokenStream) -> Self:
@@ -417,11 +425,10 @@ class Callable(Node["Callable[N]"], Generic[N]):
 
         typedefs = []
         while stream and not isinstance(stream.peek(), (lexer.RParen, lexer.Semicolon) if ignore_end else lexer.RParen):
-            binding = Binding.parse(stream)
+            binding = Binding.parse(stream, allow_lookups=False)
 
             assert_token(stream.try_pop(), lexer.Colon)
-            typ_tok = assert_token(stream.try_pop(), tuple(TYPES.keys()))
-            typ = List.from_(binding, TYPES[typ_tok](typ_tok.span))
+            typ = List.from_(binding, parse_type(stream.try_pop()))
 
             typedefs.append(TypeDef(binding.get_name(), typ, None))
 
@@ -452,8 +459,8 @@ class Function(Callable["Function"]):
             ret: Type = AnyType(Span.at(stream.last_pos))
         else:
             assert_token(stream.try_pop(), KEYWORDS.retourne, crash=False)
-            typ_ = assert_token(stream.try_peek(), list(TYPES.keys()))
-            ret = List.from_(Binding.parse(stream), TYPES[typ_](typ_.span))
+            typ_ = parse_type(stream.try_peek())
+            ret = List.from_(Binding.parse(stream, allow_lookups=False), typ_)
 
         typedefs, body = Block.parse(stream, name, KEYWORDS.debut, [KEYWORDS.fin], typedefs=True)
         return cls(name, args, ret, typedefs, body)
@@ -499,7 +506,7 @@ class Procedure(Callable["Procedure"]):
 
         if stream.try_peek() == KEYWORDS.retourne:
             retourne = stream.pop()
-            typ = Binding.parse(stream)
+            typ = Binding.parse(stream, allow_lookups=False)
 
             if ref_args:
                 new_span = Span.at(ref_args[-1].typ.span.end)
@@ -921,18 +928,26 @@ class Expr(Node["Expr"]):
 
 class Binding(Node["Binding"]):
     @classmethod
-    def _parse(cls: type[Self], stream: TokenStream) -> Binding:
+    def _parse(cls: type[Self], stream: TokenStream, *, allow_lookups: bool = True) -> Binding:
         name = assert_token(stream.try_pop(), lexer.Identifier)
         self: Binding = Variable(name)
         self.span = name.span
 
-        while isinstance((lbrack := stream.try_peek()), lexer.LBracket):
-            stream.pop()
-            index = Expr.parse(stream)
-            rbrack = assert_token(stream.try_pop(), lexer.RBracket)
-            self = Indexing(self, index)
-            self.span = self.sub.span + rbrack.span
-            self.bracket_span = lbrack.span + rbrack.span
+        valid_tokens = (lexer.LBracket, lexer.Dot) if allow_lookups else (lexer.LBracket,)
+        while isinstance(stream.try_peek(), valid_tokens):
+            next_tok = stream.pop()
+            if isinstance(next_tok, lexer.LBracket):
+                index = Expr.parse(stream)
+                rbrack = assert_token(stream.try_pop(), lexer.RBracket)
+                self = Indexing(self, index)
+                self.span = self.sub.span + rbrack.span
+                self.bracket_span = next_tok.span + rbrack.span
+            elif allow_lookups and isinstance(next_tok, lexer.Dot):
+                name = assert_token(stream.try_pop(), lexer.Identifier)
+                self = Lookup(self, next_tok, name.name)
+            else:
+                msg = f"Invalid token for binding continuation: {next_tok}"
+                raise InternalCompilerError(msg)
 
         return self
 
@@ -970,6 +985,20 @@ class Indexing(Binding):
         return f"{type(self).__name__}({self.sub}[{self.index}])"
 
 
+class Lookup(Binding):
+    sub: Binding
+    dot: lexer.Dot
+    name: SpannedStr
+
+    def __init__(self: Self, sub: Binding, dot: lexer.Dot, name: SpannedStr) -> None:
+        self.sub = sub
+        self.dot = dot
+        self.name = name
+
+    def __repr__(self: Self) -> str:
+        return f"{type(self).__name__}({self.sub}.{self.name})"
+
+
 class Operator(NoParse):
     op: lexer.OperatorType
 
@@ -988,7 +1017,7 @@ class Structure:
             bindings = []
 
             while stream:
-                bindings.append(Binding.parse(stream))
+                bindings.append(Binding.parse(stream, allow_lookups=False))
                 if isinstance(stream.try_peek(), lexer.Comma):
                     stream.pop()
                 else:
@@ -997,7 +1026,13 @@ class Structure:
             return bindings
 
         name = assert_token(stream.try_pop(), lexer.Identifier).name
-        assert_token(stream.try_pop(), lexer.Operator(lexer.OperatorType.EQ))
+        if isinstance(stream.try_peek(), lexer.LBrace):
+            Error("Missing = in structure definition").at(stream.peek().span).replacement(
+                (Span.at(stream.peek().span.start), "= "),
+                msg="add the =",
+            ).log()
+        else:
+            assert_token(stream.try_pop(), lexer.Operator(lexer.OperatorType.EQ))
         assert_token(stream.try_pop(), lexer.LBrace)
 
         fields = {}
@@ -1005,8 +1040,7 @@ class Structure:
             names = parse_list(stream)
             assert_token(stream.try_pop(), lexer.Colon)
 
-            typ_tok = assert_token(stream.try_pop(), tuple(TYPES.keys()))
-            typ_ = TYPES[typ_tok](typ_tok.span)
+            typ_ = parse_type(stream.try_pop())
 
             for binding in names:
                 typ = List.from_(binding, typ_)
@@ -1017,9 +1051,9 @@ class Structure:
         return cls(name, fields)  # type: ignore[arg-type] # apparently subclasses in dict keys are not ok
 
     name: SpannedStr
-    fields: Mapping[str, TypeDef]
+    fields: Mapping[SpannedStr, TypeDef]
 
-    def __init__(self: Self, name: SpannedStr, fields: Mapping[str, TypeDef]) -> None:
+    def __init__(self: Self, name: SpannedStr, fields: Mapping[SpannedStr, TypeDef]) -> None:
         self.name = name
         self.fields = fields
 
@@ -1159,7 +1193,7 @@ class Block:
             bindings = []
 
             while stream:
-                bindings.append(Binding.parse(stream))
+                bindings.append(Binding.parse(stream, allow_lookups=False))
                 if isinstance(stream.try_peek(), lexer.Comma):
                     stream.pop()
                 else:
@@ -1179,8 +1213,7 @@ class Block:
             bindings = parse_list(stream)
             assert_token(stream.try_pop(), lexer.Colon)
 
-            typ_tok = assert_token(stream.try_pop(), tuple(TYPES.keys()))
-            typ_ = TYPES[typ_tok](typ_tok.span)
+            typ_ = parse_type(stream.try_pop())
             value = None
             if isinstance(stream.try_peek(), lexer.Assign):
                 stream.pop()
@@ -1318,7 +1351,7 @@ def _parse(stream: TokenStream) -> tuple[list[Node[Any]], list[TypeDef], list[St
         if isinstance(definition, Structure):
             if "_" in definition.name or definition.name[0].islower() or definition.name.isupper():
                 Warn("Structures should be PascalCase").at(definition.name.span).replacement(
-                    (definition.name.span, definition.name.upper()),
+                    (definition.name.span, "".join(definition.name.title().split("_"))),
                     msg="Make the constant uppercase",
                 ).log()
 

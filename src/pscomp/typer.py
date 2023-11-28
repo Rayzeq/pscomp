@@ -5,15 +5,16 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-from . import parser
+from . import lexer, parser
 from .errors import InternalCompilerError
 from .lexer import OperatorType
 from .logger import Error, Warn
-from .parser import Node, Value
+from .parser import Node, Structure, Value
 from .parser import Unknown as UnknownValue
 from .source import Span, SpannedStr
 from .types import Any as AnyType
 from .types import Bool, Char, Float, Integer, List, String, Type, Void
+from .types import Structure as StructureType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -214,6 +215,7 @@ class Variable:
 class Context:
     python_imports: dict[str, set[str]]
     constants: dict[SpannedStr, Variable]
+    structures: dict[SpannedStr, Structure]
     functions: dict[str, Signature]
     variables: dict[SpannedStr, Variable]
     ret_type: Type | None
@@ -221,6 +223,7 @@ class Context:
     def __init__(self: Self) -> None:
         self.python_imports = {}
         self.constants = {}
+        self.structures = {}
         self.functions = {}
         self.variables = {}
         self.ret_type = None
@@ -242,6 +245,23 @@ class Context:
     def lookup_constant(self: Self, name: str) -> Variable | None:
         if name in self.constants:
             return self.constants[cast(SpannedStr, name)]
+
+        return None
+
+    def add_structure(self: Self, name: SpannedStr, struct: Structure) -> None:
+        if struct.name in self.structures:
+            Warn(f"A structure named {struct.name} is already defined, latest definition will be used").at(
+                struct.name.span,
+            ).comment(next(n for n in self.structures if n == name).span, "previous definition here").log()
+        self.structures[name] = struct
+        struct.context = self
+
+        constructor = Signature(name, [], StructureType(struct.name))
+        self.add_function(constructor)
+
+    def lookup_structure(self: Self, name: str) -> Structure | None:
+        if name in self.structures:
+            return self.structures[cast(SpannedStr, name)]
 
         return None
 
@@ -299,6 +319,7 @@ class Context:
         # global values
         new.python_imports = self.python_imports
         new.constants = self.constants
+        new.structures = self.structures
 
         new.functions = self.functions.copy()
         new.variables = self.variables.copy()
@@ -797,6 +818,13 @@ class Binding(Expression):
                 Expression.parse(binding.index, context),
                 binding.bracket_span,
             )
+        elif isinstance(binding, parser.Lookup):
+            return Lookup(
+                Binding.parse(binding.sub, context, constexpr=constexpr),
+                binding.dot,
+                binding.name,
+                context,
+            )
         else:
             msg = f"Cannot parse binding: {binding}"
             raise InternalCompilerError(msg)
@@ -870,6 +898,44 @@ class Indexing(Binding):
         self.base = base
         self.index = index
         self.brackets_span = brackets_span
+        self.is_const = base.is_const
+
+
+class Lookup(Binding):
+    base: Binding
+    name: SpannedStr
+
+    def __init__(self: Self, base: Binding, dot: lexer.Dot, name: SpannedStr, context: Context) -> None:
+        if isinstance(base.typ, AnyType):
+            typ: Type = base.typ
+        elif isinstance(base.typ, StructureType):
+            struct = context.lookup_structure(base.typ.name)
+
+            if struct is not None:
+                if name in struct.fields:
+                    typ = struct.fields[name].typ
+                else:
+                    Error(f"Structure {struct.name} has no field named {name}").at(name.span).comment(
+                        base.span,
+                        f"this is of type {struct.name}",
+                    ).log()
+                    typ = AnyType()
+            else:
+                typ = AnyType()
+                Error(f"Structure {base.typ.name} does not exist").at(base.typ.name.span).comment(
+                    base.span,
+                    f"this is of type {base.typ.name}",
+                ).log()
+        else:
+            Error(f"Cannot lookup an attribute on {base.typ.name}").at(dot.span + name.span).comment(
+                base.span,
+                f"this is of type `{base.typ.name}`",
+            ).log()
+            typ = AnyType()
+
+        super().__init__(typ, base.span + name.span)
+        self.base = base
+        self.name = name
         self.is_const = base.is_const
 
 
@@ -1189,7 +1255,7 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
 def parse(
     nodes: Iterable[Node[Any]],
     constants: list[parser.TypeDef],
-    structures: list[parser.Structure],
+    structures: list[Structure],
 ) -> tuple[list[Program | Function], Context]:
     context = Context()
 
@@ -1197,6 +1263,9 @@ def parse(
         # the parser already checked that this is not None
         value = Expression.parse(cast(parser.Expr, constant.default), context, constexpr=True)
         context.add_constant(constant.name, constant.typ, value)
+
+    for structure in structures:
+        context.add_structure(structure.name, structure)
 
     unparsed_program = []
     unparsed_function = []

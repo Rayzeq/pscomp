@@ -457,3 +457,42 @@ class List(Type):
             return True
 
         return self.subtype.assign(other.subtype) is not None and self_len.value == other_len.value
+
+
+class Structure(Type):
+    name: str = ""
+
+    def __init__(self: Self, name: str, span: Span | None = None) -> None:
+        super().__init__(span)
+        self.name = name
+
+    def pos(self: Self, /) -> Type | None:
+        return None
+
+    def neg(self: Self, /) -> Type | None:
+        return None
+
+    add = Type._never
+    radd = Type._never
+    sub = Type._never
+    rsub = Type._never
+    mul = Type._never
+    rmul = Type._never
+    div = Type._never
+    rdiv = Type._never
+    mod = Type._never
+    rmod = Type._never
+    pow = Type._never
+    rpow = Type._never
+    eq = Type._self_bool("eq")
+    req = Type._rself_bool
+    order = Type._never
+    rorder = Type._never
+    assign = Type._self("assign")
+    rassign = Type._rself
+
+    def __eq__(self: Self, other: object) -> bool:
+        if not isinstance(other, Structure):
+            return False
+
+        return self.name == other.name

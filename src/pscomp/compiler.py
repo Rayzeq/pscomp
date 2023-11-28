@@ -28,6 +28,7 @@ from .typer import (
     LessThan,
     LessThanOrEqual,
     Literal,
+    Lookup,
     Modulo,
     Multiply,
     Negative,
@@ -47,12 +48,13 @@ from .typer import (
     WhileLoop,
 )
 from .types import Bool, Char, Float, Integer, List, String, Type, Void
+from .types import Structure as StructureType
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
 
     from . import typer
-    from .parser import Value
+    from .parser import Structure, Value
 
 CASTMAP = {
     Integer: int,
@@ -85,6 +87,8 @@ def compile_binding(binding: Binding) -> str:
         return binding.name
     elif isinstance(binding, Indexing):
         return f"{compile_binding(binding.base)}[{compile_expr(binding.index)}]"
+    elif isinstance(binding, Lookup):
+        return f"{compile_binding(binding.base)}.{binding.name}"
     else:
         msg = f"Cannot compile binding: {binding}"
         raise InternalCompilerError(msg)
@@ -249,6 +253,8 @@ def compile_type(typ: Type) -> str:
 
     if isinstance(typ, List):
         return f"list[{compile_type(typ.subtype)}]"
+    elif isinstance(typ, StructureType):
+        return typ.name
     else:
         return TYPEMAP[type(typ)]
 
@@ -318,6 +324,12 @@ def compile_toplevel(toplevel: Program | Function) -> str:
         raise InternalCompilerError(msg)
 
 
+def compile_struct(struct: Structure) -> str:
+    fields = "\n".join(f"{f.name}: {compile_type(f.typ)}" for f in struct.fields.values())
+
+    return f"class {struct.name}:\n    {indent(4, fields)}"
+
+
 @overload
 def indent(level: int, lines: str) -> str:
     ...
@@ -361,17 +373,19 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
     linesep = "\n"
     joint = "\n\n\n"
 
-    constants = "\n".join(
-        f"{name}: {compile_type(const.typ)} = {compile_expr(const.value)}" for name, const in context.constants.items()
-    )
-
     imports = "\n".join(
         f"from {module} import {', '.join(attributes)}" for module, attributes in context.python_imports.items()
     )
 
+    constants = "\n".join(
+        f"{name}: {compile_type(const.typ)} = {compile_expr(const.value)}" for name, const in context.constants.items()
+    )
+
+    structure = "\n\n\n".join(map(compile_struct, context.structures.values()))
+
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
-{linesep + (linesep * 2).join(filter(bool, (imports, constants))) + linesep * 2}
+{linesep + (linesep * 2).join(filter(bool, (imports, constants, structure))) + linesep * 2}
 # ================ Compiler generated code, please don't edit ================
 class UninitMeta(type):
     def __instancecheck__(cls: UninitMeta, instance: object) -> bool:
