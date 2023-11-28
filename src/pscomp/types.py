@@ -484,8 +484,8 @@ class Structure(Type):
     rmod = Type._never
     pow = Type._never
     rpow = Type._never
-    eq = Type._self_bool("eq")
-    req = Type._rself_bool
+    eq = Type._never
+    req = Type._never
     order = Type._never
     rorder = Type._never
     assign = Type._self("assign")
