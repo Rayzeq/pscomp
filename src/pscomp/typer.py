@@ -45,19 +45,19 @@ class Reference(Argument):
 
 class Signature:
     @classmethod
-    def from_func(cls: type[Self], func: parser.Function) -> Self:
+    def from_func(cls: type[Self], func: parser.Function, context: Context) -> Self:
         return cls(
             func.name,
-            [Argument(arg.name, arg.typ) for arg in func.args],
+            [Argument(arg.name, TypeDef.from_(arg, context).typ) for arg in func.args],
             func.ret,
         )
 
     @classmethod
-    def from_proc(cls: type[Self], proc: parser.Procedure) -> Self:
+    def from_proc(cls: type[Self], proc: parser.Procedure, context: Context) -> Self:
         return cls(
             proc.name,
-            [Argument(arg.name, arg.typ) for arg in proc.args]
-            + [Reference(arg.name, arg.typ) for arg in proc.ref_args],
+            [Argument(arg.name, TypeDef.from_(arg, context).typ) for arg in proc.args]
+            + [Reference(arg.name, TypeDef.from_(arg, context).typ) for arg in proc.ref_args],
         )
 
     name: SpannedStr
@@ -254,7 +254,6 @@ class Context:
                 struct.name.span,
             ).comment(next(n for n in self.structures if n == name).span, "previous definition here").log()
         self.structures[name] = struct
-        struct.context = self
 
         constructor = Signature(name, [], StructureType(struct.name))
         self.add_function(constructor)
@@ -381,12 +380,12 @@ class Program:
 
 class UnparsedFunction:
     @classmethod
-    def from_func(cls: type[Self], func: parser.Function) -> Self:
-        return cls(Signature.from_func(func), func.types, func.body)
+    def from_func(cls: type[Self], func: parser.Function, context: Context) -> Self:
+        return cls(Signature.from_func(func, context), func.types, func.body)
 
     @classmethod
-    def from_proc(cls: type[Self], proc: parser.Procedure) -> Self:
-        return cls(Signature.from_proc(proc), proc.types, proc.body)
+    def from_proc(cls: type[Self], proc: parser.Procedure, context: Context) -> Self:
+        return cls(Signature.from_proc(proc, context), proc.types, proc.body)
 
     signature: Signature
     types: list[parser.TypeDef]
@@ -1271,11 +1270,11 @@ def parse(
     unparsed_function = []
     for node in nodes:
         if isinstance(node, parser.Function):
-            function = UnparsedFunction.from_func(node)
+            function = UnparsedFunction.from_func(node, context)
             context.add_function(function.signature)
             unparsed_function.append(function)
         elif isinstance(node, parser.Procedure):
-            function = UnparsedFunction.from_proc(node)
+            function = UnparsedFunction.from_proc(node, context)
             context.add_function(function.signature)
             unparsed_function.append(function)
         elif isinstance(node, parser.Program):
