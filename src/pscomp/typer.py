@@ -1089,27 +1089,27 @@ class Condition(Statement):
 
 
 class Switch(Statement):
-    binding: Binding
+    value: Expression
     cases: list[tuple[Literal, list[Statement]]]
     default: list[Statement] | None
 
     def __init__(
         self: Self,
-        binding: Binding,
+        value: Expression,
         cases: list[tuple[Literal, list[Statement]]],
         default: list[Statement] | None,
     ) -> None:
-        self.binding = binding
+        self.value = value
         self.cases = cases
         self.default = default
 
-        typ = self.binding.typ
+        typ = self.value.typ
         for lit, _ in self.cases:
             if not typ.assign(lit.typ):
                 Error("Every case must be of the same type than the variable").at(
                     lit.span,
                     msg=f"this is of type {lit.typ.name}",
-                ).comment(self.binding.span, f"the variable is of type {typ.name}").log()
+                ).comment(self.value.span, f"the variable is of type {typ.name}").log()
 
 
 class ForLoop(Statement):
@@ -1222,11 +1222,11 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
 
             statements.append(Condition(condition, if_block, else_block))
         elif isinstance(node, parser.Switch):
-            binding = Binding.parse(node.binding, context)
+            value = Expression.parse(node.value, context)
             cases = [(Literal(value), parse_block(block, context)) for value, block in node.blocks]
             default = parse_block(node.default, context) if node.default else None
 
-            statements.append(Switch(binding, cases, default))
+            statements.append(Switch(value, cases, default))
         elif isinstance(node, parser.ForLoop):
             binding = Binding.parse(node.binding, context)
             start = Expression.parse(node.start, context)

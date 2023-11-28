@@ -186,7 +186,7 @@ def compile_statement(statement: Statement) -> str:
         if statement.default:
             cases += "\n" + f"case _:\n    {indent(4, compile_block(statement.default))}"
 
-        return f"match {compile_expr(statement.binding)}:\n    {indent(4, cases)}"
+        return f"match {compile_expr(statement.value)}:\n    {indent(4, cases)}"
     elif isinstance(statement, ForLoop):
         binding = compile_binding(statement.binding)
         start = compile_expr(statement.start)

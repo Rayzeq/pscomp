@@ -587,7 +587,7 @@ class Switch(Node["Switch"]):
     @classmethod
     def _parse(cls: type[Self], stream: TokenStream) -> Self:
         stream.pop()
-        binding = Binding.parse(stream)
+        tested_value = Expr.parse(stream)
         Block._parse_start(stream, KEYWORDS.faire)
 
         blocks = []
@@ -605,24 +605,24 @@ class Switch(Node["Switch"]):
             default = Block._parse_body(stream, breakers=[KEYWORDS.fin])
 
         Block._parse_end(stream, "faire")
-        return cls(binding, blocks, default)
+        return cls(tested_value, blocks, default)
 
-    binding: Binding
+    value: Expr
     blocks: list[tuple[Value, list[Node[Any]]]]
     default: list[Node[Any]] | None
 
     def __init__(
         self: Self,
-        binding: Binding,
+        value: Expr,
         blocks: list[tuple[Value, list[Node[Any]]]],
         default: list[Node[Any]] | None,
     ) -> None:
-        self.binding = binding
+        self.value = value
         self.blocks = blocks
         self.default = default
 
     def __repr__(self: Self) -> str:
-        return f"{type(self).__name__}({self.binding!r}, ...)"
+        return f"{type(self).__name__}({self.value!r}, ...)"
 
 
 class ForLoop(Node["ForLoop"]):
