@@ -1165,13 +1165,13 @@ class Block:
     ) -> list[TypeDef | Structure]:
         ...
 
-    @classmethod  # type: ignore[misc] # apparently my overloads are wrong
+    @classmethod
     def _parse_typedefs(
         cls: type[Self],
         stream: TokenStream,
         *,
         allow_structs: bool = False,
-    ) -> list[TypeDef | Structure]:
+    ) -> list[TypeDef] | list[TypeDef | Structure]:
         def check_line(stream: TokenStream) -> bool:
             if not stream:
                 return False
@@ -1184,7 +1184,11 @@ class Block:
             while True:
                 if (not stream) or stream.peek(i).span.end.line != line:
                     return False
-                if stream and isinstance(stream.peek(i), lexer.Colon):
+
+                tok = stream.peek(i)
+                if isinstance(tok, lexer.LParen):  # prevent function definition from being valid lines
+                    return False
+                if stream and isinstance(tok, lexer.Colon):
                     return True
 
                 i += 1
