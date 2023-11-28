@@ -160,6 +160,7 @@ class KEYWORDS:
     reel = Identifier("reel")
     car = Identifier("car")
     chaine = Identifier("chaine")
+    null = Identifier("null")
     vrai = Identifier("vrai")
     faux = Identifier("faux")
     saisir = Identifier("saisir")

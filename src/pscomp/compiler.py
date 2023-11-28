@@ -4,6 +4,7 @@ from itertools import tee, zip_longest
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from .errors import InternalCompilerError
+from .parser import Unknown
 from .typer import (
     Add,
     And,
@@ -72,6 +73,8 @@ def pairwise(iterable: Iterable[T]) -> Iterable[tuple[T, T | None]]:
 
 
 def compile_value(value: Value) -> str:
+    if isinstance(value, Unknown):
+        return "Uninit"
     return repr(value.value)
 
 

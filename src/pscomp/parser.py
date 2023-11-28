@@ -97,6 +97,7 @@ class NoParse(Node["Never"]):
 
 class Value(Node["Value"]):
     TOKENS: tuple[Token[Any] | type[Token[Any]], ...] = (
+        KEYWORDS.null,
         KEYWORDS.vrai,
         KEYWORDS.faux,
         lexer.Integer,
@@ -106,10 +107,12 @@ class Value(Node["Value"]):
     )
 
     @classmethod
-    def _parse(cls: type[Self], stream: TokenStream) -> Self:
+    def _parse(cls: type[Self], stream: TokenStream) -> Value:
         next_token = assert_token(stream.try_pop(), cls.TOKENS)
 
-        if next_token == KEYWORDS.vrai:
+        if next_token == KEYWORDS.null:
+            return Unknown()
+        elif next_token == KEYWORDS.vrai:
             return cls(Bool(), value=True)
         elif next_token == KEYWORDS.faux:
             return cls(Bool(), value=False)
