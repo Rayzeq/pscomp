@@ -46,6 +46,7 @@ class Reference(Argument):
 class Signature:
     @classmethod
     def from_func(cls: type[Self], func: parser.Function, context: Context) -> Self:
+        TypeDef._check_indexes(func.ret, context)
         return cls(
             func.name,
             [Argument(arg.name, TypeDef.from_(arg, context).typ) for arg in func.args],
