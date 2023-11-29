@@ -28,7 +28,14 @@ class Type(ABC):
     def _always(self: Self, _other: Type, /) -> Self:
         return self
 
-    def _never(self: Self, _other: Type, /) -> None:
+    @staticmethod
+    def _never(name: str, /) -> Callable[[Type, Type], Type | None]:
+        def wrapper(self: Self, other: Type, /) -> Type | None:
+            return getattr(other, "r" + name)(self)  # type: ignore[no-any-return] # don't worry about this
+
+        return wrapper
+
+    def _rnever(self: Self, _other: Type, /) -> None:
         return None
 
     @staticmethod
@@ -203,24 +210,24 @@ class Void(Type):
     def neg(self: Self, /) -> None:
         return None
 
-    add = Type._never
-    radd = Type._never
-    sub = Type._never
-    rsub = Type._never
-    mul = Type._never
-    rmul = Type._never
-    div = Type._never
-    rdiv = Type._never
-    mod = Type._never
-    rmod = Type._never
-    pow = Type._never
-    rpow = Type._never
-    eq = Type._never
-    req = Type._never
-    order = Type._never
-    rorder = Type._never
-    assign = Type._never
-    rassign = Type._never
+    add = Type._never("add")
+    radd = Type._rnever
+    sub = Type._never("sub")
+    rsub = Type._rnever
+    mul = Type._never("mul")
+    rmul = Type._rnever
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
+    eq = Type._never("eq")
+    req = Type._rnever
+    order = Type._never("order")
+    rorder = Type._rnever
+    assign = Type._never("assign")
+    rassign = Type._rnever
 
 
 class Bool(Type):
@@ -232,22 +239,22 @@ class Bool(Type):
     def neg(self: Self, /) -> None:
         return None
 
-    add = Type._never
-    radd = Type._never
-    sub = Type._never
-    rsub = Type._never
-    mul = Type._never
-    rmul = Type._never
-    div = Type._never
-    rdiv = Type._never
-    mod = Type._never
-    rmod = Type._never
-    pow = Type._never
-    rpow = Type._never
+    add = Type._never("add")
+    radd = Type._rnever
+    sub = Type._never("sub")
+    rsub = Type._rnever
+    mul = Type._never("mul")
+    rmul = Type._rnever
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
     eq = Type._self("eq")
     req = Type._rself
-    order = Type._never
-    rorder = Type._never
+    order = Type._never("order")
+    rorder = Type._rnever
     assign = Type._self("assign")
     rassign = Type._rself
 
@@ -339,14 +346,14 @@ class Char(Type):
             return self
         return None
 
-    mul = Type._never
-    rmul = Type._never
-    div = Type._never
-    rdiv = Type._never
-    mod = Type._never
-    rmod = Type._never
-    pow = Type._never
-    rpow = Type._never
+    mul = Type._never("mul")
+    rmul = Type._rnever
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
     eq = Type._self_bool("eq")
     req = Type._rself_bool
     order = Type._self_bool("order")
@@ -366,8 +373,8 @@ class String(Type):
 
     add = Type._self("add")
     radd = Type._rself
-    sub = Type._never
-    rsub = Type._never
+    sub = Type._never("sub")
+    rsub = Type._rnever
 
     def mul(self: Self, other: Type, /) -> Type | None:
         if isinstance(other, Integer):
@@ -379,12 +386,12 @@ class String(Type):
             return self
         return None
 
-    div = Type._never
-    rdiv = Type._never
-    mod = Type._never
-    rmod = Type._never
-    pow = Type._never
-    rpow = Type._never
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
     eq = Type._self_bool("eq")
     req = Type._rself_bool
     order = Type._self_bool("order")
@@ -425,22 +432,22 @@ class List(Type):
     def neg(self: Self, /) -> Type | None:
         return None
 
-    add = Type._never
-    radd = Type._never
-    sub = Type._never
-    rsub = Type._never
-    mul = Type._never
-    rmul = Type._never
-    div = Type._never
-    rdiv = Type._never
-    mod = Type._never
-    rmod = Type._never
-    pow = Type._never
-    rpow = Type._never
+    add = Type._never("add")
+    radd = Type._rnever
+    sub = Type._never("sub")
+    rsub = Type._rnever
+    mul = Type._never("mul")
+    rmul = Type._rnever
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
     eq = Type._self_bool("eq")
     req = Type._rself_bool
-    order = Type._never
-    rorder = Type._never
+    order = Type._never("order")
+    rorder = Type._rnever
     assign = Type._self("assign")
     rassign = Type._rself
 
@@ -472,22 +479,22 @@ class Structure(Type):
     def neg(self: Self, /) -> Type | None:
         return None
 
-    add = Type._never
-    radd = Type._never
-    sub = Type._never
-    rsub = Type._never
-    mul = Type._never
-    rmul = Type._never
-    div = Type._never
-    rdiv = Type._never
-    mod = Type._never
-    rmod = Type._never
-    pow = Type._never
-    rpow = Type._never
-    eq = Type._never
-    req = Type._never
-    order = Type._never
-    rorder = Type._never
+    add = Type._never("add")
+    radd = Type._rnever
+    sub = Type._never("sub")
+    rsub = Type._rnever
+    mul = Type._never("mul")
+    rmul = Type._rnever
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
+    eq = Type._never("eq")
+    req = Type._rnever
+    order = Type._never("order")
+    rorder = Type._rnever
     assign = Type._self("assign")
     rassign = Type._rself
 
