@@ -329,8 +329,15 @@ def compile_toplevel(toplevel: Program | Function) -> str:
 
 def compile_struct(struct: Structure) -> str:
     fields = "\n".join(f"{f.name}: {compile_type(f.typ)}" for f in struct.fields.values())
+    field_inits = "\n".join(f"self.{f.name} = Uninit" for f in struct.fields.values())
 
-    return f"class {struct.name}:\n    {indent(4, fields)}"
+    return f"""
+class {struct.name}:
+    {indent(4, fields)}
+
+    def __init__(self: {struct.name}) -> None:
+        {indent(8, field_inits)}
+""".strip()
 
 
 @overload
