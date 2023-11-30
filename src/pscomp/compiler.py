@@ -14,6 +14,7 @@ from .typer import (
     BuiltinSignature,
     Cast,
     Condition,
+    Destroy,
     Divide,
     DoWhileLoop,
     Equal,
@@ -177,6 +178,8 @@ def compile_statement(statement: Statement) -> str:
         return f"print({make_fstring(statement.elements)})"
     elif isinstance(statement, Input):
         return "\n".join(compile_input(b) for b in statement.bindings)
+    elif isinstance(statement, Destroy):
+        return f"{compile_binding(statement.binding)}.__destroy__()"
     elif isinstance(statement, Condition):
         base = f"if {compile_expr(statement.condition)}:\n    {indent(4, compile_block(statement.if_block))}"
         if statement.else_block:
@@ -333,10 +336,32 @@ def compile_struct(struct: Structure) -> str:
 
     return f"""
 class {struct.name}:
+    __destroyed__: bool = False
     {indent(4, fields)}
 
     def __init__(self: {struct.name}) -> None:
         {indent(8, field_inits)}
+
+    def __destroy__(self: {struct.name}) -> None:
+        self.__destroyed__ = True
+
+    def __getattribute__(self: {struct.name}, name: str) -> Any:
+        if name ==  "__destroyed__":
+            return super().__getattribute__(name)
+
+        if self.__destroyed__:
+            msg = "Cannot access destroyed structure"
+            raise RuntimeError(msg)
+        return super().__getattribute__(name)
+
+    def __setattr__(self: {struct.name}, name: str, value: Any) -> None:
+        if name ==  "__destroyed__":
+            return super().__setattr__(name, value)
+
+        if self.__destroyed__:
+            msg = "Cannot access destroyed structure"
+            raise RuntimeError(msg)
+        return super().__setattr__(name, value)
 """.strip()
 
 
@@ -395,7 +420,8 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
 
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
-{linesep + (linesep * 2).join(filter(bool, (imports, constants, structure))) + linesep * 2}
+from typing import Any
+{linesep * 2 + (linesep * 2).join(filter(bool, (imports, constants, structure))) + linesep * 2}
 # ================ Compiler generated code, please don't edit ================
 class UninitMeta(type):
     def __instancecheck__(cls: UninitMeta, instance: object) -> bool:

@@ -1066,6 +1066,13 @@ class Return(Statement):
         self.value = value
 
 
+class Destroy(Statement):
+    binding: Binding
+
+    def __init__(self: Self, binding: Binding) -> None:
+        self.binding = binding
+
+
 class Condition(Statement):
     condition: Expression
     if_block: list[Statement]
@@ -1215,6 +1222,9 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
         elif isinstance(node, parser.Return):
             value = Expression.parse(node.value, context)
             statements.append(Return(value, node.span, context))
+        elif isinstance(node, parser.Destroy):
+            binding = Binding.parse(node.binding, context)
+            statements.append(Destroy(binding))
         elif isinstance(node, parser.Condition):
             condition = Expression.parse(node.condition, context)
             if_block = parse_block(node.if_block, context)

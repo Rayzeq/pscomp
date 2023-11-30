@@ -185,6 +185,7 @@ class KEYWORDS:
     fonction = Identifier("fonction")
     retourne = Identifier("retourne")
     procedure = Identifier("procedure")
+    detruire = Identifier("detruire")
 
     accented: Mapping[str, str] = {
         "à": "a",

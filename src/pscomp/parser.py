@@ -786,6 +786,23 @@ class Return(Node["Return"]):
         return f"{type(self).__name__}({self.value!r})"
 
 
+class Destroy(Node["Destroy"]):
+    @classmethod
+    def _parse(cls: type[Self], stream: TokenStream) -> Self:
+        stream.pop()
+        binding = Binding.parse(stream)
+
+        return cls(binding)
+
+    binding: Binding
+
+    def __init__(self: Self, binding: Binding) -> None:
+        self.binding = binding
+
+    def __repr__(self: Self) -> str:
+        return f"{type(self).__name__}({self.binding!r})"
+
+
 class Assignement(Node["Assignement"]):
     @classmethod
     def _parse(cls: type[Self], stream: TokenStream) -> Self:
@@ -1081,6 +1098,7 @@ class Block:
         KEYWORDS.afficher: Print,
         KEYWORDS.saisir: Input,
         KEYWORDS.retourne: Return,
+        KEYWORDS.detruire: Destroy,
     }
 
     @classmethod
