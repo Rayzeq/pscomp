@@ -842,6 +842,21 @@ class Assignement(Node["Assignement"]):
         return f"{type(self).__name__}({self.binding!r}, {self.value!r})"
 
 
+class Comment(Node["Comment"]):
+    @classmethod
+    def _parse(cls: type[Self], stream: TokenStream) -> Self:
+        text = assert_token(stream.try_pop(), lexer.Comment).text
+        return cls(text)
+
+    text: str
+
+    def __init__(self: Self, text: str) -> None:
+        self.text = text
+
+    def __repr__(self: Self) -> str:
+        return f"{type(self).__name__}({self.text!r})"
+
+
 class FuncCall(Node["FuncCall"]):
     @classmethod
     def _parse_expr_list(cls: type[Self], stream: TokenStream) -> list[Expr]:
@@ -1285,6 +1300,7 @@ class Block:
             *breakers,
             *cls.STARTERS.keys(),
             lexer.Identifier,
+            lexer.Comment,
         )
 
         while stream:
@@ -1308,6 +1324,8 @@ class Block:
                 nodes.append(FuncCall.parse(stream))
             elif isinstance(next_token, lexer.Identifier):
                 nodes.append(Assignement.parse(stream))
+            elif isinstance(next_token, lexer.Comment):
+                nodes.append(Comment.parse(stream))
             else:
                 stream.pop()
 

@@ -13,6 +13,7 @@ from .typer import (
     Binding,
     BuiltinSignature,
     Cast,
+    Comment,
     Condition,
     Destroy,
     Divide,
@@ -183,6 +184,8 @@ def compile_statement(statement: Statement) -> str:
         return f"{compile_binding(statement.binding)}.__destroy__()"
     elif isinstance(statement, InlinePython):
         return statement.code
+    elif isinstance(statement, Comment):
+        return f"# {statement.text}"
     elif isinstance(statement, Condition):
         base = f"if {compile_expr(statement.condition)}:\n    {indent(4, compile_block(statement.if_block))}"
         if statement.else_block:

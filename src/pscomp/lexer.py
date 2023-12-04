@@ -378,6 +378,39 @@ class String(Token["String"]):
         return self.value
 
 
+class Comment(Token["Comment"]):
+    __slots__ = ("text",)
+
+    text: str
+
+    @classmethod
+    def _parse(cls: type[Self], reader: StringReader) -> Self:
+        reader.pop()
+
+        text = ""
+        while (c := reader.pop()) != "\n":
+            text += c
+
+        return cls(text)
+
+    def __init__(self: Self, text: str) -> None:
+        self.text = text
+
+    def __eq__(self: Self, other: object) -> bool:
+        if isinstance(other, Comment):
+            return self.text == other.text
+        return NotImplemented
+
+    def __hash__(self: Self) -> int:
+        return hash(self.text)
+
+    def __repr__(self: Self) -> str:
+        return f"{type(self).__name__}({self.text!r} {self.span})"
+
+    def __str__(self: Self) -> str:
+        return self.text
+
+
 class OperatorType(Enum):
     ADD = "+"
     SUB = "-"
@@ -512,8 +545,7 @@ def _lexer(reader: StringReader) -> list[Token[Any]]:
             case c if c in SingleCharToken.__all__:
                 tokens.append(SingleCharToken.__all__[c].parse(reader))
             case "#":
-                while reader.pop() != "\n":
-                    pass
+                tokens.append(Comment.parse(reader))
             case _ if next_char in " \t\n":
                 reader.pop()
             case _:

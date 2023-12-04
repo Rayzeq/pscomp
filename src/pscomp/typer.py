@@ -1080,6 +1080,13 @@ class InlinePython(Statement):
         self.code = code
 
 
+class Comment(Statement):
+    text: str
+
+    def __init__(self: Self, text: str) -> None:
+        self.text = text
+
+
 class Condition(Statement):
     condition: Expression
     if_block: list[Statement]
@@ -1234,6 +1241,8 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
             statements.append(Destroy(binding))
         elif isinstance(node, parser.InlinePython):
             statements.append(InlinePython(node.code))
+        elif isinstance(node, parser.Comment):
+            statements.append(Comment(node.text))
         elif isinstance(node, parser.Condition):
             condition = Expression.parse(node.condition, context)
             if_block = parse_block(node.if_block, context)
