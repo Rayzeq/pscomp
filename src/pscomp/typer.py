@@ -1073,6 +1073,13 @@ class Destroy(Statement):
         self.binding = binding
 
 
+class InlinePython(Statement):
+    code: str
+
+    def __init__(self: Self, code: str) -> None:
+        self.code = code
+
+
 class Condition(Statement):
     condition: Expression
     if_block: list[Statement]
@@ -1225,6 +1232,8 @@ def parse_block(nodes: list[Node[Any]], context: Context) -> list[Statement]:
         elif isinstance(node, parser.Destroy):
             binding = Binding.parse(node.binding, context)
             statements.append(Destroy(binding))
+        elif isinstance(node, parser.InlinePython):
+            statements.append(InlinePython(node.code))
         elif isinstance(node, parser.Condition):
             condition = Expression.parse(node.condition, context)
             if_block = parse_block(node.if_block, context)

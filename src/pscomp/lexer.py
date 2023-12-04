@@ -186,6 +186,7 @@ class KEYWORDS:
     retourne = Identifier("retourne")
     procedure = Identifier("procedure")
     detruire = Identifier("detruire")
+    __python__ = Identifier("__python__")
 
     accented: Mapping[str, str] = {
         "à": "a",

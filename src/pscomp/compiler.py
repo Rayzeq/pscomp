@@ -26,6 +26,7 @@ from .typer import (
     GreaterThan,
     GreaterThanOrEqual,
     Indexing,
+    InlinePython,
     Input,
     LessThan,
     LessThanOrEqual,
@@ -180,6 +181,8 @@ def compile_statement(statement: Statement) -> str:
         return "\n".join(compile_input(b) for b in statement.bindings)
     elif isinstance(statement, Destroy):
         return f"{compile_binding(statement.binding)}.__destroy__()"
+    elif isinstance(statement, InlinePython):
+        return statement.code
     elif isinstance(statement, Condition):
         base = f"if {compile_expr(statement.condition)}:\n    {indent(4, compile_block(statement.if_block))}"
         if statement.else_block:

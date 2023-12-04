@@ -803,6 +803,25 @@ class Destroy(Node["Destroy"]):
         return f"{type(self).__name__}({self.binding!r})"
 
 
+class InlinePython(Node["InlinePython"]):
+    @classmethod
+    def _parse(cls: type[Self], stream: TokenStream) -> Self:
+        stream.pop()
+        assert_token(stream.try_pop(), lexer.LParen)
+        code = assert_token(stream.try_pop(), lexer.String).value
+        assert_token(stream.try_pop(), lexer.RParen)
+
+        return cls(code)
+
+    code: str
+
+    def __init__(self: Self, code: str) -> None:
+        self.code = code
+
+    def __repr__(self: Self) -> str:
+        return f"{type(self).__name__}({self.code!r})"
+
+
 class Assignement(Node["Assignement"]):
     @classmethod
     def _parse(cls: type[Self], stream: TokenStream) -> Self:
@@ -1099,6 +1118,7 @@ class Block:
         KEYWORDS.saisir: Input,
         KEYWORDS.retourne: Return,
         KEYWORDS.detruire: Destroy,
+        KEYWORDS.__python__: InlinePython,
     }
 
     @classmethod
