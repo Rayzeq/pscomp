@@ -1308,6 +1308,9 @@ def parse(
             unparsed_function.append(function)
         elif isinstance(node, parser.Program):
             unparsed_program.append(node)
+        elif isinstance(node, parser.Comment):
+            # TODO: maybe associate with the closest function or program ?
+            pass
         else:
             Error("Invalid top level instruction").at(node.span).detail(type(node).__name__).hint(
                 "you must put this instruction in a program, a function or a procedure",
