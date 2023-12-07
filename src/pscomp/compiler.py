@@ -38,6 +38,7 @@ from .typer import (
     Negative,
     Not,
     NotEqual,
+    OpenFunc,
     Or,
     Positive,
     Power,
@@ -51,7 +52,7 @@ from .typer import (
     VariableBinding,
     WhileLoop,
 )
-from .types import Bool, Char, Float, Integer, List, String, Type, Void
+from .types import BinaryFile, Bool, Char, Float, Integer, List, String, TextFile, Type, Void
 from .types import Structure as StructureType
 
 if TYPE_CHECKING:
@@ -101,8 +102,19 @@ def compile_binding(binding: Binding) -> str:
 
 
 def compile_funcall(funcall: FuncCall) -> str:
-    if funcall.signature and isinstance(funcall.signature, (BuiltinSignature, Cast)):
-        name = funcall.signature.python_name
+    sig = funcall.signature
+    if isinstance(sig, OpenFunc):
+        mode = sig.MODES.get(getattr(funcall.args[1].compute(), "value", "r"), "r")
+        if funcall.target_type and isinstance(funcall.target_type, BinaryFile):
+            mode += "b"
+        return f"open({compile_expr(funcall.args[0])}, {mode!r})"
+    elif isinstance(sig, BuiltinSignature) and sig.name == "fermer":
+        return f"{compile_expr(funcall.args[0])}.close()"
+    elif isinstance(sig, BuiltinSignature) and sig.name == "fdf":
+        return f"eof({compile_expr(funcall.args[0])})"
+
+    if sig and isinstance(sig, (BuiltinSignature, Cast)):
+        name = sig.python_name
     else:
         name = funcall.name
     ref_args = list(map(compile_binding, funcall.ref_args))
@@ -261,6 +273,8 @@ def compile_type(typ: Type) -> str:
         Float: "float",
         Char: "str",
         String: "str",
+        TextFile: "TextIO",
+        BinaryFile: "BinaryIO",
     }
 
     if isinstance(typ, List):
@@ -426,12 +440,18 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
 
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
-from typing import Any
+from typing import Any, IO, TextIO, BinaryIO, AnyStr
 {linesep * 2 + (linesep * 2).join(filter(bool, (imports, constants, structure))) + linesep * 2}
 # ================ Compiler generated code, please don't edit ================
 class UninitMeta(type):
     def __instancecheck__(cls: UninitMeta, instance: object) -> bool:
         return True
+
+
+def eof(f: IO[AnyStr]) -> bool:
+    r = not f.read(1)
+    f.seek(-1, 1)
+    return r
 
 
 UninitClass = UninitMeta("UninitClass", (), {{}})

@@ -10,7 +10,7 @@ from .lexer import KEYWORDS, Token
 from .logger import Error, Warn
 from .source import Position, Span, SpannedStr
 from .types import Any as AnyType
-from .types import Bool, Char, Float, Integer, List, String, Type
+from .types import BinaryFile, Bool, Char, Float, Integer, List, String, TextFile, Type
 from .types import Structure as StructType
 
 if TYPE_CHECKING:
@@ -23,6 +23,7 @@ class ParserError(Exception):
 
 class TokenStream:
     tokens: list[Token[Any]]
+    last_token: Token[Any]
     _last_pos: Position
 
     def __init__(self: Self, tokens: list[Token[Any]]) -> None:
@@ -55,6 +56,7 @@ class TokenStream:
 
     def pop(self: Self) -> Token[Any]:
         token = self.tokens.pop(0)
+        self.last_token = token
         self._last_pos = token.span.end
         return token
 
@@ -63,6 +65,9 @@ class TokenStream:
             return self.pop()
         except IndexError:
             return None
+
+    def put(self: Self, token: Token[Any]) -> None:
+        self.tokens.insert(0, token)
 
     def __bool__(self: Self) -> bool:
         return bool(self.tokens)
@@ -385,9 +390,23 @@ TYPES: dict[lexer.Identifier, type[Type]] = {
 }
 
 
-def parse_type(token: Token[Any] | None) -> Type:
-    token_: lexer.Identifier = assert_token(token, (*TYPES.keys(), lexer.Identifier))  # type: ignore[arg-type] # yeah mypy is really dumb
-    typ = TYPES[token_](token_.span) if token_ in TYPES else StructType(token_.name, token_.span)
+def parse_type(stream: TokenStream) -> Type:
+    token_: lexer.Identifier = assert_token(stream.try_pop(), (*TYPES.keys(), lexer.Identifier))  # type: ignore[arg-type] # yeah mypy is really dumb
+    if token_ in TYPES:
+        typ = TYPES[token_](token_.span)
+    elif token_ == lexer.Identifier("fichier"):
+        token_ = assert_token(
+            stream.try_pop(),
+            (lexer.Identifier("texte"), lexer.Identifier("binaire"), lexer.Identifier("de")),
+        )
+        if token_ == lexer.Identifier("texte"):
+            typ = TextFile(token_.span)
+        elif token_ == lexer.Identifier("binaire"):
+            typ = BinaryFile(span=token_.span)
+        elif token_ == lexer.Identifier("de"):
+            typ = BinaryFile(parse_type(stream), token_.span)
+    else:
+        typ = StructType(token_.name, token_.span)
 
     return typ
 
@@ -431,7 +450,7 @@ class Callable(Node["Callable[N]"], Generic[N]):
             binding = Binding.parse(stream, allow_lookups=False)
 
             assert_token(stream.try_pop(), lexer.Colon)
-            typ = List.from_(binding, parse_type(stream.try_pop()))
+            typ = List.from_(binding, parse_type(stream))
 
             typedefs.append(TypeDef(binding.get_name(), typ, None))
 
@@ -462,7 +481,8 @@ class Function(Callable["Function"]):
             ret: Type = AnyType(Span.at(stream.last_pos))
         else:
             assert_token(stream.try_pop(), KEYWORDS.retourne, crash=False)
-            typ_ = parse_type(stream.try_peek())
+            typ_ = parse_type(stream)
+            stream.put(stream.last_token)
             ret = List.from_(Binding.parse(stream, allow_lookups=False), typ_)
 
         typedefs, body = Block.parse(stream, name, KEYWORDS.debut, [KEYWORDS.fin], typedefs=True)
@@ -1094,7 +1114,7 @@ class Structure:
             names = parse_list(stream)
             assert_token(stream.try_pop(), lexer.Colon)
 
-            typ_ = parse_type(stream.try_pop())
+            typ_ = parse_type(stream)
 
             for binding in names:
                 typ = List.from_(binding, typ_)
@@ -1273,7 +1293,7 @@ class Block:
             bindings = parse_list(stream)
             assert_token(stream.try_pop(), lexer.Colon)
 
-            typ_ = parse_type(stream.try_pop())
+            typ_ = parse_type(stream)
             value = None
             if isinstance(stream.try_peek(), lexer.Assign):
                 stream.pop()

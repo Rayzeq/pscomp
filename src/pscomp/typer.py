@@ -214,6 +214,39 @@ class Cast(Signature):
             e.log()
 
 
+class OpenFunc(Signature):
+    source = "open"
+    MODES: ClassVar = {
+        "lecture": "r",
+        "ecriture": "w",
+        "écriture": "w",
+    }
+
+    def __init__(self: Self, func: BuiltinSignature) -> None:
+        super().__init__(func.name, func.args, func.ret)
+
+    def check(self: Self, name: SpannedStr, args: list[Expression], references: list[Binding]) -> None:
+        super().check(name, args, references)
+
+        _, mode_expr = args
+
+        mode_lit = mode_expr.compute()
+        if isinstance(mode_lit, UnknownValue):
+            Error("The mode for opening a file must be a constexpr (i.e it must computable at compile time)").at(
+                mode_expr.span,
+                msg="the value of this cannot be determined at compile time",
+            ).log()
+            return
+        if not isinstance(mode_lit.value, str):
+            return
+
+        mode = mode_lit.value
+        if mode not in self.MODES:
+            Error(f"Invalid mode `{mode}` for open(), expected one of: {', '.join(self.MODES)}").at(
+                mode_lit.span,
+            ).log()
+
+
 from .builtins import Unknown, builtins  # noqa: E402 # prevent circular import
 
 
@@ -978,6 +1011,8 @@ class FuncCall(Expression):
     ref_args: list[Binding]
 
     signature: Signature | None
+    # only used for calls to "ouvrir"
+    target_type: Type | None
 
     def __init__(
         self: Self,
@@ -993,6 +1028,7 @@ class FuncCall(Expression):
         self.args = args
         self.ref_args = ref_args
         self.signature = signature
+        self.target_type = None
 
 
 class Statement:
@@ -1015,6 +1051,9 @@ class Assignement(Statement):
 
         if self.binding.is_const:
             Error("Cannot modify a constant").at(self.binding.span + self.value.span).log()
+
+        if isinstance(value, FuncCall) and value.name == "open":
+            value.target_type = binding.typ
 
 
 class ExpressionStmt(Statement):

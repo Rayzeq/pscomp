@@ -4,9 +4,9 @@ from typing import cast
 
 from . import lexer
 from .source import SourceFile
-from .typer import Argument, BuiltinSignature, Cast
+from .typer import Argument, BuiltinSignature, Cast, OpenFunc
 from .types import Any as AnyType
-from .types import Bool, Char, Float, Integer, String, Type
+from .types import Bool, Char, File, Float, Integer, String, Type
 
 
 def _i(token: lexer.Token) -> lexer.Identifier:
@@ -24,7 +24,7 @@ def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSign
             current_source = cast(lexer.String, tokens.pop(0)).value
             continue
 
-        tokens.pop(0)  # fonction
+        t = _i(tokens.pop(0)).name  # fonction / procedure
         name = _i(tokens.pop(0)).name
         tokens.pop(0)  # (
 
@@ -38,9 +38,10 @@ def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSign
                 tokens.pop(0)
 
         tokens.pop(0)  # )
-        tokens.pop(0)  # retourne
+        if t == "fonction":
+            tokens.pop(0)  # retourne
 
-        ret_typ = _i(tokens.pop(0))
+            ret_typ = _i(tokens.pop(0))
 
         source = ".".join(filter(bool, [current_source, name]))
 
@@ -51,8 +52,12 @@ def _parse_builtin_functions(tokens: list[lexer.Token]) -> dict[str, BuiltinSign
         elif current_source == "cast":
             assert len(args) == 1
             result[name] = Cast(name, args[0], _TYPES[ret_typ.name](ret_typ.span), _TYPE_NAMES[name])
-        else:
+        elif t == "fonction":
             result[name] = BuiltinSignature(name, args, _TYPES[ret_typ.name](ret_typ.span), source=source)
+        elif t == "procedure":
+            result[name] = BuiltinSignature(name, args, source=source)
+        else:
+            assert False
 
     return result
 
@@ -86,6 +91,11 @@ fonction log(number: reel) retourne reel
 
 source: "random"
 fonction random() retourne reel
+
+source: ""
+fonction open(chemin: chaine, mode: chaine) retourne fichier
+procedure fermer(f: fichier)
+fonction fdf(f: fichier) retourne booleen
 """.strip(),
     path="<builtins>",
 )
@@ -96,6 +106,7 @@ _TYPES: dict[str, type[Type]] = {
     "reel": Float,
     "car": Char,
     "chaine": String,
+    "fichier": File,
 }
 _TYPE_NAMES: dict[str, str] = {
     "booleen": "bool",
@@ -108,4 +119,5 @@ _tokens = lexer.lexer(BuiltinSource.sections[0])
 
 Unknown = AnyType(_tokens.pop(0).span)
 
-builtins = _parse_builtin_functions(_tokens)
+builtins: dict[str, BuiltinSignature | Cast | OpenFunc] = dict(_parse_builtin_functions(_tokens))
+builtins["open"] = OpenFunc(cast(BuiltinSignature, builtins["open"]))

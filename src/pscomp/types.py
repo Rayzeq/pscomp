@@ -503,3 +503,64 @@ class Structure(Type):
             return False
 
         return self.name == other.name
+
+
+class File(Type):
+    name = "fichier"
+
+    def pos(self: Self, /) -> Type | None:
+        return None
+
+    def neg(self: Self, /) -> Type | None:
+        return None
+
+    add = Type._never("add")
+    radd = Type._rnever
+    sub = Type._never("sub")
+    rsub = Type._rnever
+    mul = Type._never("mul")
+    rmul = Type._rnever
+    div = Type._never("div")
+    rdiv = Type._rnever
+    mod = Type._never("mod")
+    rmod = Type._rnever
+    pow = Type._never("pow")
+    rpow = Type._rnever
+    eq = Type._never("eq")
+    req = Type._rnever
+    order = Type._never("order")
+    rorder = Type._rnever
+
+    def assign(self: Self, other: Type, /) -> Type | None:
+        if self == other or type(self) == File or type(other) == File:
+            return self
+        return other.rassign(self)
+
+    def rassign(self: Self, other: Type, /) -> Type | None:
+        if self == other or type(self) == File or type(other) == File:
+            return self
+        return None
+
+    def __eq__(self: Self, other: object) -> bool:
+        return isinstance(other, type(self))
+
+
+class TextFile(File):
+    name = "fichier texte"
+
+
+class BinaryFile(File):
+    name = "fichier binaire"
+    typ: Type | None = None
+
+    def __init__(self: Self, typ: Type | None = None, span: Span | None = None) -> None:
+        super().__init__(span)
+        self.typ = typ
+
+    def __eq__(self: Self, other: object) -> bool:
+        if not isinstance(other, BinaryFile):
+            return False
+
+        if self.typ is None or other.typ is None:
+            return True
+        return self.typ.assign(other.typ) is not None
