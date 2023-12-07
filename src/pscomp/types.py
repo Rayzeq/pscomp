@@ -467,7 +467,7 @@ class List(Type):
 
 
 class Structure(Type):
-    name: str = ""
+    name = ""
 
     def __init__(self: Self, name: str, span: Span | None = None) -> None:
         super().__init__(span)

@@ -180,6 +180,18 @@ class Cast(Signature):
         self.sources.append(source)
 
     def check(self: Self, name: SpannedStr, args: list[Expression], references: list[Binding]) -> None:
+        if references:
+            e = Error(f"Function {name} takes 0 arguments by reference but {len(references)} were given").at(name.span)
+
+            if references:
+                e.comment(
+                    reduce((lambda x, y: x + y), (x.span for x in references)),
+                    f"there are {len(references)} arguments here",
+                )
+
+            e.comment(self.name.span, "there is no reference arguments here")
+            e.log()
+
         if len(args) != 1:
             e = Error(f"Function {name} takes 1 arguments but {len(args)} were given").at(name.span)
 
