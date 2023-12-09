@@ -52,6 +52,7 @@ from .typer import (
     TypeDef,
     VariableBinding,
     WhileLoop,
+    WriteFunc,
 )
 from .types import BinaryFile, Bool, Char, Float, Integer, List, String, TextFile, Type, Void
 from .types import Structure as StructureType
@@ -113,13 +114,29 @@ def compile_read_funcall(call: FuncCall) -> str:
             return f"{b_str} = {f_str}.read(1)"
         elif isinstance(binding.typ, Integer):
             return f"{b_str} = read_int({f_str})"
-        elif isinstance(binding.typ, StructureType):
-            return f"{b_str} = {binding.typ.name}.__read__({f_str})"
         else:
             msg = f"Cannot compile call to `lire` with type `{binding.typ}`"
             raise InternalCompilerError(msg)
     else:
         return f"{b_str} = pickle.load({f_str})"
+
+
+def compile_write_funcall(call: FuncCall) -> str:
+    file, expr = call.args
+    f_str, e_str = compile_expr(file), compile_expr(expr)
+
+    if isinstance(file.typ, TextFile):
+        if isinstance(expr.typ, String):
+            return f'{f_str}.write(f"{{{e_str}}}\\n")'
+        elif isinstance(expr.typ, Char):
+            return f"{f_str}.write({e_str})"
+        elif isinstance(expr.typ, Integer):
+            return f"{f_str}.write(str({e_str}))"
+        else:
+            msg = f"Cannot compile call to `ecrire` with type `{expr.typ}`"
+            raise InternalCompilerError(msg)
+    else:
+        return f"pickle.dump({e_str}, {f_str})"
 
 
 def compile_funcall(funcall: FuncCall) -> str:
@@ -135,6 +152,8 @@ def compile_funcall(funcall: FuncCall) -> str:
         return f"eof({compile_expr(funcall.args[0])})"
     elif isinstance(sig, ReadFunc):
         return compile_read_funcall(funcall)
+    elif isinstance(sig, WriteFunc):
+        return compile_write_funcall(funcall)
 
     if sig and isinstance(sig, (BuiltinSignature, Cast)):
         name = sig.python_name

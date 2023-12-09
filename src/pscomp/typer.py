@@ -266,7 +266,7 @@ class ReadFunc(Signature):
             ).log()
         if isinstance(file.typ, TextFile) and not isinstance(binding.typ, self.TYPES):
             Error(
-                f"Cannot read a `{binding.typ.name}` from a file, readable types are: {', '.join(t.name for t in self.TYPES)}",
+                f"Cannot read a `{binding.typ.name}` from a text file, readable types are: {', '.join(t.name for t in self.TYPES)}",
             ).at(
                 binding.span,
                 msg=f"this is of type `{binding.typ.name}`",
@@ -277,6 +277,34 @@ class ReadFunc(Signature):
                 msg=f"this is of type `{binding.typ.name}`",
             ).comment(file.span, f"this of type `{file.typ.name}`").hint(
                 f"You can only read values of type `{file.typ.typ.name}` from this file",
+            ).log()
+
+
+class WriteFunc(Signature):
+    source = "ecrire"
+    TYPES = (Integer, Char, String)
+
+    def __init__(self: Self, func: BuiltinSignature) -> None:
+        super().__init__(func.name, func.args, func.ret)
+
+    def check(self: Self, name: SpannedStr, args: list[Expression], references: list[Binding]) -> None:
+        super().check(name, args, references)
+
+        file, expr = args
+
+        if isinstance(file.typ, TextFile) and not isinstance(expr.typ, self.TYPES):
+            Error(
+                f"Cannot write a `{expr.typ.name}` to a text file, writeable types are: {', '.join(t.name for t in self.TYPES)}",
+            ).at(
+                expr.span,
+                msg=f"this is of type `{expr.typ.name}`",
+            ).log()
+        if isinstance(file.typ, BinaryFile) and file.typ.typ and not expr.typ.assign(file.typ.typ):
+            Error(f"Cannot write a `{expr.typ.name}` to a `{file.typ.name}`").at(
+                expr.span,
+                msg=f"this is of type `{expr.typ.name}`",
+            ).comment(file.span, f"this of type `{file.typ.name}`").hint(
+                f"You can only write values of type `{file.typ.typ.name}` to this file",
             ).log()
 
 
