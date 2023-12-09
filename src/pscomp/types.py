@@ -467,7 +467,7 @@ class List(Type):
 
 
 class Structure(Type):
-    name = ""
+    name = "structure"
 
     def __init__(self: Self, name: str, span: Span | None = None) -> None:
         super().__init__(span)
@@ -556,6 +556,9 @@ class BinaryFile(File):
     def __init__(self: Self, typ: Type | None = None, span: Span | None = None) -> None:
         super().__init__(span)
         self.typ = typ
+
+        if typ is not None:
+            self.name = f"fichier de {typ.name}"
 
     def __eq__(self: Self, other: object) -> bool:
         if not isinstance(other, BinaryFile):

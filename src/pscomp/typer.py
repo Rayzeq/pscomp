@@ -13,7 +13,7 @@ from .parser import Node, Structure, Value
 from .parser import Unknown as UnknownValue
 from .source import Span, SpannedStr
 from .types import Any as AnyType
-from .types import Bool, Char, Float, Integer, List, String, Type, Void
+from .types import BinaryFile, Bool, Char, Float, Integer, List, String, TextFile, Type, Void
 from .types import Structure as StructureType
 
 if TYPE_CHECKING:
@@ -244,6 +244,39 @@ class OpenFunc(Signature):
         if mode not in self.MODES:
             Error(f"Invalid mode `{mode}` for ouvrir(), expected one of: {', '.join(self.MODES)}").at(
                 mode_lit.span,
+            ).log()
+
+
+class ReadFunc(Signature):
+    source = "lire"
+    TYPES = (Integer, Char, String)
+
+    def __init__(self: Self, func: BuiltinSignature) -> None:
+        super().__init__(func.name, func.args, func.ret)
+
+    def check(self: Self, name: SpannedStr, args: list[Expression], references: list[Binding]) -> None:
+        super().check(name, args, references)
+
+        file, binding = args
+
+        if not isinstance(binding, Binding):
+            Error("You must read into a variable").at(
+                binding.span,
+                msg="this is not a variable",
+            ).log()
+        if isinstance(file.typ, TextFile) and not isinstance(binding.typ, self.TYPES):
+            Error(
+                f"Cannot read a `{binding.typ.name}` from a file, readable types are: {', '.join(t.name for t in self.TYPES)}",
+            ).at(
+                binding.span,
+                msg=f"this is of type `{binding.typ.name}`",
+            ).log()
+        if isinstance(file.typ, BinaryFile) and file.typ.typ and not binding.typ.assign(file.typ.typ):
+            Error(f"Cannot read a `{binding.typ.name}` from a `{file.typ.name}`").at(
+                binding.span,
+                msg=f"this is of type `{binding.typ.name}`",
+            ).comment(file.span, f"this of type `{file.typ.name}`").hint(
+                f"You can only read values of type `{file.typ.typ.name}` from this file",
             ).log()
 
 

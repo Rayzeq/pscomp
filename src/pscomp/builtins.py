@@ -4,7 +4,7 @@ from typing import cast
 
 from . import lexer
 from .source import SourceFile
-from .typer import Argument, BuiltinSignature, Cast, OpenFunc
+from .typer import Argument, BuiltinSignature, Cast, OpenFunc, ReadFunc
 from .types import Any as AnyType
 from .types import Bool, Char, File, Float, Integer, String, Type
 
@@ -96,6 +96,7 @@ source: ""
 fonction ouvrir(chemin: chaine, mode: chaine) retourne fichier
 procedure fermer(f: fichier)
 fonction fdf(f: fichier) retourne booleen
+procedure lire(f: fichier, variable: Any)
 """.strip(),
     path="<builtins>",
 )
@@ -107,6 +108,7 @@ _TYPES: dict[str, type[Type]] = {
     "car": Char,
     "chaine": String,
     "fichier": File,
+    "Any": AnyType,
 }
 _TYPE_NAMES: dict[str, str] = {
     "booleen": "bool",
@@ -121,3 +123,4 @@ Unknown = AnyType(_tokens.pop(0).span)
 
 builtins: dict[str, BuiltinSignature | Cast | OpenFunc] = dict(_parse_builtin_functions(_tokens))
 builtins["ouvrir"] = OpenFunc(cast(BuiltinSignature, builtins["ouvrir"]))
+builtins["lire"] = ReadFunc(cast(BuiltinSignature, builtins["lire"]))

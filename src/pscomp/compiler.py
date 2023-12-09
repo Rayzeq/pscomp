@@ -44,6 +44,7 @@ from .typer import (
     Power,
     Print,
     Program,
+    ReadFunc,
     Return,
     Statement,
     Substract,
@@ -101,6 +102,26 @@ def compile_binding(binding: Binding) -> str:
         raise InternalCompilerError(msg)
 
 
+def compile_read_funcall(call: FuncCall) -> str:
+    file, binding = call.args
+    f_str, b_str = compile_expr(file), compile_expr(binding)
+
+    if isinstance(file.typ, TextFile):
+        if isinstance(binding.typ, String):
+            return f"{b_str} = {f_str}.readline().rstrip('\\n')"
+        elif isinstance(binding.typ, Char):
+            return f"{b_str} = {f_str}.read(1)"
+        elif isinstance(binding.typ, Integer):
+            return f"{b_str} = read_int({f_str})"
+        elif isinstance(binding.typ, StructureType):
+            return f"{b_str} = {binding.typ.name}.__read__({f_str})"
+        else:
+            msg = f"Cannot compile call to `lire` with type `{binding.typ}`"
+            raise InternalCompilerError(msg)
+    else:
+        return f"{b_str} = pickle.load({f_str})"
+
+
 def compile_funcall(funcall: FuncCall) -> str:
     sig = funcall.signature
     if isinstance(sig, OpenFunc):
@@ -112,6 +133,8 @@ def compile_funcall(funcall: FuncCall) -> str:
         return f"{compile_expr(funcall.args[0])}.close()"
     elif isinstance(sig, BuiltinSignature) and sig.name == "fdf":
         return f"eof({compile_expr(funcall.args[0])})"
+    elif isinstance(sig, ReadFunc):
+        return compile_read_funcall(funcall)
 
     if sig and isinstance(sig, (BuiltinSignature, Cast)):
         name = sig.python_name
@@ -441,6 +464,7 @@ def compile(toplevels: list[Program | Function], context: typer.Context) -> str:
     return f"""#!/usr/bin/env python3
 from __future__ import annotations
 from typing import Any, IO, TextIO, BinaryIO, AnyStr
+import pickle
 {linesep * 2 + (linesep * 2).join(filter(bool, (imports, constants, structure))) + linesep * 2}
 # ================ Compiler generated code, please don't edit ================
 class UninitMeta(type):
@@ -452,6 +476,15 @@ def eof(f: IO[AnyStr]) -> bool:
     r = not f.read(1)
     f.seek(-1, 1)
     return r
+
+
+def read_int(f: TextIO) -> int:
+    r = ""
+    while (c := f.read(1)) and c.isdigit():
+        r += c
+
+    f.seek(-1, 1)
+    return int(r)
 
 
 UninitClass = UninitMeta("UninitClass", (), {{}})
