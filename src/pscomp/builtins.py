@@ -93,7 +93,7 @@ source: "random"
 fonction random() retourne reel
 
 source: ""
-fonction open(chemin: chaine, mode: chaine) retourne fichier
+fonction ouvrir(chemin: chaine, mode: chaine) retourne fichier
 procedure fermer(f: fichier)
 fonction fdf(f: fichier) retourne booleen
 """.strip(),
@@ -120,4 +120,4 @@ _tokens = lexer.lexer(BuiltinSource.sections[0])
 Unknown = AnyType(_tokens.pop(0).span)
 
 builtins: dict[str, BuiltinSignature | Cast | OpenFunc] = dict(_parse_builtin_functions(_tokens))
-builtins["open"] = OpenFunc(cast(BuiltinSignature, builtins["open"]))
+builtins["ouvrir"] = OpenFunc(cast(BuiltinSignature, builtins["ouvrir"]))

@@ -215,7 +215,7 @@ class Cast(Signature):
 
 
 class OpenFunc(Signature):
-    source = "open"
+    source = "ouvrir"
     MODES: ClassVar = {
         "lecture": "r",
         "ecriture": "w",
@@ -242,7 +242,7 @@ class OpenFunc(Signature):
 
         mode = mode_lit.value
         if mode not in self.MODES:
-            Error(f"Invalid mode `{mode}` for open(), expected one of: {', '.join(self.MODES)}").at(
+            Error(f"Invalid mode `{mode}` for ouvrir(), expected one of: {', '.join(self.MODES)}").at(
                 mode_lit.span,
             ).log()
 
@@ -1052,7 +1052,7 @@ class Assignement(Statement):
         if self.binding.is_const:
             Error("Cannot modify a constant").at(self.binding.span + self.value.span).log()
 
-        if isinstance(value, FuncCall) and value.name == "open":
+        if isinstance(value, FuncCall) and value.name == "ouvrir":
             value.target_type = binding.typ
 
 
